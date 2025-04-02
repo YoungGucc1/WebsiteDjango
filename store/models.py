@@ -50,6 +50,7 @@ class BaseModel(models.Model):
 
 # --- Image Model ---
 class Image(BaseModel):
+    name = models.CharField(max_length=255, db_index=True, blank=True, null=True)
     file_path = models.ImageField(upload_to='images/')
     description = models.TextField(blank=True, null=True)
     resolution = models.CharField(max_length=50, blank=True, null=True, editable=False)
@@ -108,6 +109,7 @@ class Image(BaseModel):
 # --- Category Model ---
 class Category(BaseModel):
     name = models.CharField(max_length=255, unique=True)
+    name_2 = models.CharField(max_length=255, blank=True, null=True)
     slug = models.SlugField(max_length=255, unique=True, blank=True)
     description = models.TextField(blank=True, null=True)
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='children', db_index=True)
@@ -128,6 +130,7 @@ class Category(BaseModel):
 # --- Tag Model ---
 class Tag(BaseModel):
     name = models.CharField(max_length=100, unique=True)
+    name_2 = models.CharField(max_length=100, blank=True, null=True)
     slug = models.SlugField(max_length=100, unique=True, blank=True)
 
     class Meta(BaseModel.Meta):
@@ -163,6 +166,8 @@ class Price(BaseModel):
 # --- Product Model ---
 class Product(BaseModel):
     name = models.CharField(max_length=255, db_index=True)
+    name_2 = models.CharField(max_length=255, blank=True, null=True)
+    article_number = models.CharField(max_length=50, blank=True, null=True, help_text="Product article/SKU number", db_index=True)
     slug = models.SlugField(max_length=255, unique=True, blank=True)
     description = models.TextField(blank=True, null=True)
     short_description = models.CharField(max_length=255, blank=True, null=True)
