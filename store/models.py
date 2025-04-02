@@ -1,0 +1,203 @@
+import uuid
+from django.db import models
+from django.utils.text import slugify
+from django.utils import timezone
+from PIL import Image as PILImage
+import os
+from decimal import Decimal
+
+# --- Helper Function for Unique Slugs ---
+def generate_unique_slug(instance, source_field='name', slug_field='slug'):
+    """
+    Generates a unique slug for the instance.
+    Appends '-<number>' if the initial slug already exists.
+    """
+    if getattr(instance, slug_field) and not instance._state.adding:
+        # Do not regenerate slug if it already exists and we are updating
+        return getattr(instance, slug_field)
+
+    base_slug = slugify(getattr(instance, source_field))
+    if not base_slug: # Handle cases where source_field might be empty
+        base_slug = str(instance.id)[:8] # Use part of UUID if name is empty
+
+    slug = base_slug
+    num = 1
+    ModelClass = instance.__class__
+
+    # Check for uniqueness excluding the current instance if it's already saved
+    qs = ModelClass.objects.filter(**{slug_field: slug})
+    if instance.pk:
+        qs = qs.exclude(pk=instance.pk)
+
+    while qs.exists():
+        slug = f"{base_slug}-{num}"
+        num += 1
+        qs = ModelClass.objects.filter(**{slug_field: slug})
+        if instance.pk:
+            qs = qs.exclude(pk=instance.pk)
+
+    return slug
+
+# --- Abstract Base Model ---
+class BaseModel(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    modified_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        abstract = True
+        ordering = ['-created_at']
+
+# --- Image Model ---
+class Image(BaseModel):
+    file_path = models.ImageField(upload_to='images/')
+    description = models.TextField(blank=True, null=True)
+    resolution = models.CharField(max_length=50, blank=True, null=True, editable=False)
+    size = models.PositiveIntegerField(help_text="Size in KB", blank=True, null=True, editable=False)
+    format = models.CharField(max_length=10, blank=True, null=True, editable=False)
+    alt_text = models.CharField(max_length=255, blank=True, null=True, help_text="Text description for accessibility and SEO")
+
+    def save(self, *args, **kwargs):
+        is_new = self._state.adding
+        super().save(*args, **kwargs)
+
+        if (is_new or 'file_path' in kwargs.get('update_fields', [])) and self.file_path:
+            try:
+                img_path = self.file_path.path
+                img = PILImage.open(img_path)
+
+                # --- Optional: Image Optimization ---
+                max_size = (1920, 1080) # Example max dimensions
+                img_changed = False
+                current_format = img.format
+
+                if img.width > max_size[0] or img.height > max_size[1]:
+                    img.thumbnail(max_size, PILImage.Resampling.LANCZOS)
+                    img_changed = True
+
+                if img.mode not in ('RGB', 'L'):
+                    img = img.convert('RGB')
+                    img_changed = True
+
+                save_kwargs = {'quality': 85, 'optimize': True}
+                save_format = current_format if current_format in ['JPEG', 'PNG', 'GIF'] else 'JPEG'
+                if img_changed:
+                    img.save(img_path, format=save_format, **save_kwargs)
+
+                # --- Update Metadata ---
+                with PILImage.open(img_path) as final_img:
+                    res = f"{final_img.width}x{final_img.height}"
+                    fmt = final_img.format
+                    sz = os.path.getsize(img_path) // 1024 # Size in KB
+
+                # Update fields without recursion if they changed
+                if self.resolution != res or self.format != fmt or self.size != sz:
+                    Image.objects.filter(pk=self.pk).update(resolution=res, size=sz, format=fmt)
+
+            except FileNotFoundError:
+                print(f"Warning: Could not process image {getattr(self.file_path, 'path', 'N/A')}, file not found.")
+            except Exception as e:
+                print(f"Error processing image {getattr(self.file_path, 'path', 'N/A')}: {e}")
+
+    def __str__(self):
+        if self.file_path:
+            base_name = os.path.basename(self.file_path.name)
+            return f"{base_name} ({self.format})" if self.format else base_name
+        return f"Image {self.id}"
+
+# --- Category Model ---
+class Category(BaseModel):
+    name = models.CharField(max_length=255, unique=True)
+    slug = models.SlugField(max_length=255, unique=True, blank=True)
+    description = models.TextField(blank=True, null=True)
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='children', db_index=True)
+    image = models.ForeignKey(Image, null=True, blank=True, on_delete=models.SET_NULL, related_name='category_images')
+
+    class Meta(BaseModel.Meta):
+        verbose_name_plural = "Categories"
+        indexes = [models.Index(fields=['slug'])]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = generate_unique_slug(self, 'name', 'slug')
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+# --- Tag Model ---
+class Tag(BaseModel):
+    name = models.CharField(max_length=100, unique=True)
+    slug = models.SlugField(max_length=100, unique=True, blank=True)
+
+    class Meta(BaseModel.Meta):
+        indexes = [models.Index(fields=['slug'])]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = generate_unique_slug(self, 'name', 'slug')
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+# --- Price Model ---
+class Price(BaseModel):
+    product = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='prices')
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=3, default='USD', help_text="e.g., USD, EUR")
+    description = models.CharField(max_length=100, blank=True, null=True, help_text="e.g., 'Standard Price', 'Sale Price'")
+    is_active = models.BooleanField(default=True, help_text="Is this price currently active?")
+
+    class Meta(BaseModel.Meta):
+        ordering = ['-is_active', 'amount']
+        indexes = [
+            models.Index(fields=['product', 'is_active']),
+        ]
+
+    def __str__(self):
+        desc = f" ({self.description})" if self.description else ""
+        active_status = "" if self.is_active else " (Inactive)"
+        return f"{self.product.name}: {self.amount} {self.currency}{desc}{active_status}"
+
+# --- Product Model ---
+class Product(BaseModel):
+    name = models.CharField(max_length=255, db_index=True)
+    slug = models.SlugField(max_length=255, unique=True, blank=True)
+    description = models.TextField(blank=True, null=True)
+    short_description = models.CharField(max_length=255, blank=True, null=True)
+    category = models.ForeignKey(Category, on_delete=models.PROTECT, db_index=True, related_name='products')
+    tags = models.ManyToManyField(Tag, blank=True, related_name='products')
+    images = models.ManyToManyField(Image, blank=True, related_name='products')
+    is_featured = models.BooleanField(default=False, db_index=True)
+    is_active = models.BooleanField(default=True, db_index=True, help_text="Is this product visible on the site?")
+
+    class Meta(BaseModel.Meta):
+        indexes = [
+            models.Index(fields=['slug']),
+            models.Index(fields=['is_active', 'is_featured']),
+            models.Index(fields=['name']),
+            models.Index(fields=['category']),
+        ]
+        ordering = ['name']
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = generate_unique_slug(self, 'name', 'slug')
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def current_price_display(self):
+        """Returns the first active price found, or None."""
+        active_price = self.prices.filter(is_active=True).order_by('amount').first()
+        if active_price:
+            return f"{active_price.amount} {active_price.currency}"
+        return "Price not available"
+
+    @property
+    def main_image(self):
+        """Returns the first image associated with the product, or None."""
+        return self.images.first()

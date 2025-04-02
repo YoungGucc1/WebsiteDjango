@@ -1,0 +1,118 @@
+{% extends 'store/base.html' %}
+
+{% block content %}
+<div class="row">
+    <!-- Sidebar with Categories -->
+    <div class="col-md-3 mb-4">
+        <div class="card">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0">Categories</h5>
+            </div>
+            <div class="list-group list-group-flush">
+                <a href="{% url 'store:product_list' %}" class="list-group-item list-group-item-action {% if not category %}active{% endif %}">
+                    All Products
+                </a>
+                {% for cat in categories %}
+                <a href="{% url 'store:category_products' cat.slug %}" 
+                   class="list-group-item list-group-item-action {% if category.id == cat.id %}active{% endif %}">
+                    {{ cat.name }}
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Product Listing -->
+    <div class="col-md-9">
+        <!-- Page Header -->
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h2>
+                {% if category %}
+                Products in {{ category.name }}
+                {% elif tag %}
+                Products tagged with "{{ tag.name }}"
+                {% else %}
+                All Products
+                {% endif %}
+            </h2>
+        </div>
+        
+        {% if category and category.description %}
+        <div class="mb-4">
+            <p>{{ category.description }}</p>
+        </div>
+        {% endif %}
+        
+        <!-- Products Grid -->
+        <div class="row row-cols-1 row-cols-md-3 g-4">
+            {% for product in products %}
+            <div class="col">
+                <div class="card h-100 product-card">
+                    {% if product.main_image %}
+                    <img src="{{ product.main_image.file_path.url }}" class="card-img-top" alt="{{ product.name }}">
+                    {% else %}
+                    <div class="card-img-top bg-light text-center py-5">
+                        <i class="fas fa-image fa-3x text-secondary"></i>
+                    </div>
+                    {% endif %}
+                    <div class="card-body">
+                        <h5 class="card-title">{{ product.name }}</h5>
+                        <p class="card-text">{{ product.short_description|default:product.description|truncatechars:80 }}</p>
+                        <p class="fw-bold">{{ product.current_price_display }}</p>
+                    </div>
+                    <div class="card-footer bg-white border-top-0">
+                        <a href="{% url 'store:product_detail' product.slug %}" class="btn btn-primary w-100">View Details</a>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="col-12">
+                <div class="alert alert-info">
+                    No products found.
+                    {% if category %}
+                    <a href="{% url 'store:product_list' %}">View all products</a>
+                    {% endif %}
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+        
+        <!-- Pagination -->
+        {% if is_paginated %}
+        <nav class="mt-4">
+            <ul class="pagination justify-content-center">
+                {% if page_obj.has_previous %}
+                <li class="page-item">
+                    <a class="page-link" href="?page=1">&laquo; First</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.previous_page_number }}">Previous</a>
+                </li>
+                {% endif %}
+                
+                {% for num in page_obj.paginator.page_range %}
+                    {% if page_obj.number == num %}
+                    <li class="page-item active">
+                        <span class="page-link">{{ num }}</span>
+                    </li>
+                    {% elif num > page_obj.number|add:'-3' and num < page_obj.number|add:'3' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ num }}">{{ num }}</a>
+                    </li>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if page_obj.has_next %}
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.next_page_number }}">Next</a>
+                </li>
+                <li class="page-item">
+                    <a class="page-link" href="?page={{ page_obj.paginator.num_pages }}">Last &raquo;</a>
+                </li>
+                {% endif %}
+            </ul>
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %} 
