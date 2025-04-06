@@ -50,6 +50,15 @@ class BaseModel(models.Model):
 
 # --- Image Model ---
 class Image(BaseModel):
+    class ImageType(models.TextChoices):
+        CATEGORY = 'category', 'Category Photo'
+        PRODUCT = 'product', 'Product Photo'
+        BARCODE = 'barcode', 'Barcode'
+        QRCODE = 'qrcode', 'QR Code'
+        PREVIEW = 'preview', 'Preview'
+        PACKAGING = 'packaging', 'Packaging'
+        LOGO = 'logo', 'Logo'
+    
     name = models.CharField(max_length=255, db_index=True, blank=True, null=True)
     file_path = models.ImageField(upload_to='images/')
     description = models.TextField(blank=True, null=True)
@@ -57,10 +66,37 @@ class Image(BaseModel):
     size = models.PositiveIntegerField(help_text="Size in KB", blank=True, null=True, editable=False)
     format = models.CharField(max_length=10, blank=True, null=True, editable=False)
     alt_text = models.CharField(max_length=255, blank=True, null=True, help_text="Text description for accessibility and SEO")
+    type = models.CharField(
+        max_length=20,
+        choices=ImageType.choices,
+        default=ImageType.PRODUCT,
+        help_text="Type of the image (e.g., category photo, product photo, barcode, etc.)",
+        db_index=True
+    )
+    is_main = models.BooleanField(
+        default=False, 
+        db_index=True,
+        help_text="Mark this image as the main image for the product"
+    )
 
     def save(self, *args, **kwargs):
         is_new = self._state.adding
-        super().save(*args, **kwargs)
+        
+        # If this image is being set as main, unset any other main images for the same products
+        if self.is_main:
+            # We need to save first to ensure M2M relationships exist
+            super().save(*args, **kwargs)
+            
+            # For each product this image is associated with, unset other main images
+            for product in self.products.all():
+                # Exclude current image and update all others
+                product.images.exclude(pk=self.pk).filter(is_main=True).update(is_main=False)
+                
+            # Return early since we already called super().save()
+            return
+        else:
+            # Proceed with normal save if not setting as main
+            super().save(*args, **kwargs)
 
         if (is_new or 'file_path' in kwargs.get('update_fields', [])) and self.file_path:
             try:
@@ -110,6 +146,7 @@ class Image(BaseModel):
 class Category(BaseModel):
     name = models.CharField(max_length=255, unique=True)
     name_2 = models.CharField(max_length=255, blank=True, null=True)
+    category_article = models.CharField(max_length=50, blank=True, null=True, help_text="Category article/reference code", db_index=True)
     slug = models.SlugField(max_length=255, unique=True, blank=True)
     description = models.TextField(blank=True, null=True)
     parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='children', db_index=True)
@@ -117,7 +154,7 @@ class Category(BaseModel):
 
     class Meta(BaseModel.Meta):
         verbose_name_plural = "Categories"
-        indexes = [models.Index(fields=['slug'])]
+        indexes = [models.Index(fields=['slug']), models.Index(fields=['category_article'])]
 
     def save(self, *args, **kwargs):
         if not self.slug:
@@ -204,5 +241,9 @@ class Product(BaseModel):
 
     @property
     def main_image(self):
-        """Returns the first image associated with the product, or None."""
+        """Returns the main image of the product, or the first image if no main image is set, or None."""
+        main_image = self.images.filter(is_main=True).first()
+        if main_image:
+            return main_image
+        # Fall back to the first image if no main image is set
         return self.images.first()
