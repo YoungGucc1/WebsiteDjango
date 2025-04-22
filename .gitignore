@@ -24,7 +24,7 @@ MANIFEST
 # Django
 *.log
 local_settings.py
-media/
+
 
 # Virtual Environment
 venv/
