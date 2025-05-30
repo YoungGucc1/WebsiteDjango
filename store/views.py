@@ -5,6 +5,7 @@ from .forms import ProductImportForm
 import pandas as pd
 from django.db import transaction
 from django.contrib import messages
+from decimal import Decimal
 
 def home(request):
     """Homepage view showing featured products"""
