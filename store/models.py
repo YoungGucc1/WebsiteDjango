@@ -183,22 +183,39 @@ class Tag(BaseModel):
 
 # --- Price Model ---
 class Price(BaseModel):
+    class PriceType(models.TextChoices):
+        SELLING = 'selling', 'Selling Price'
+        PURCHASE = 'purchase', 'Purchase Price'
+        REGULAR = 'regular', 'Regular Price'
+        DISCOUNT = 'discount', 'Discount Price'
+        WHOLESALE = 'wholesale', 'Wholesale Price'
+        OTHER = 'other', 'Other Price'
+
     product = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='prices')
+    price_type = models.CharField(
+        max_length=20,
+        choices=PriceType.choices,
+        default=PriceType.REGULAR,
+        db_index=True,
+        help_text="Type of the price (e.g., selling, purchase, discount)"
+    )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
     currency = models.CharField(max_length=3, default='USD', help_text="e.g., USD, EUR")
-    description = models.CharField(max_length=100, blank=True, null=True, help_text="e.g., 'Standard Price', 'Sale Price'")
+    description = models.CharField(max_length=100, blank=True, null=True, help_text="Optional: further details about this price")
     is_active = models.BooleanField(default=True, help_text="Is this price currently active?")
 
     class Meta(BaseModel.Meta):
-        ordering = ['-is_active', 'amount']
+        ordering = ['product', '-is_active', 'price_type', 'amount']
+        unique_together = [['product', 'price_type', 'currency']] # A product should have one unique price per type and currency
         indexes = [
-            models.Index(fields=['product', 'is_active']),
+            models.Index(fields=['product', 'price_type', 'is_active']),
         ]
 
     def __str__(self):
+        type_display = self.get_price_type_display()
         desc = f" ({self.description})" if self.description else ""
         active_status = "" if self.is_active else " (Inactive)"
-        return f"{self.product.name}: {self.amount} {self.currency}{desc}{active_status}"
+        return f"{self.product.name}: {self.amount} {self.currency} ({type_display}){desc}{active_status}"
 
 # --- Product Model ---
 class Product(BaseModel):

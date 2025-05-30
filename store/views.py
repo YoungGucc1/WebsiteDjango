@@ -215,22 +215,24 @@ def import_products_from_excel(request):
                         # Create or update Selling Price
                         Price.objects.update_or_create(
                             product=product,
-                            description='Selling price', # Differentiator
+                            price_type=Price.PriceType.SELLING,
+                            currency='USD', # Assuming USD, make this dynamic if currency can vary per row/import
                             defaults={
                                 'amount': Decimal(selling_price_val),
-                                'currency': 'USD', # Default currency, adjust as needed
-                                'is_active': True  # Selling price is usually active
+                                'is_active': True,  # Selling price is usually active
+                                'description': 'Imported Selling Price' # Optional: add a default description
                             }
                         )
                         
                         # Create or update Purchase Price
                         Price.objects.update_or_create(
                             product=product,
-                            description='Purchase price', # Differentiator
+                            price_type=Price.PriceType.PURCHASE,
+                            currency='USD', # Assuming USD
                             defaults={
                                 'amount': Decimal(purchase_price_val),
-                                'currency': 'USD', # Default currency, adjust as needed
-                                'is_active': True # Or False, depending on business logic for displaying purchase price
+                                'is_active': True, # Or False, depending on business logic
+                                'description': 'Imported Purchase Price' # Optional: add a default description
                             }
                         )
 

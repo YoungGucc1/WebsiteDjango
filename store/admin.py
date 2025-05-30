@@ -45,10 +45,11 @@ class TagAdmin(admin.ModelAdmin):
 
 @admin.register(Price)
 class PriceAdmin(admin.ModelAdmin):
-    list_display = ('product', 'amount', 'currency', 'is_active', 'created_at')
-    list_filter = ('currency', 'is_active', 'created_at')
-    search_fields = ('product__name', 'description')
+    list_display = ('product', 'price_type', 'amount', 'currency', 'is_active', 'description', 'created_at')
+    list_filter = ('price_type', 'currency', 'is_active', 'created_at')
+    search_fields = ('product__name', 'description', 'price_type')
     raw_id_fields = ('product',)
+    list_editable = ('amount', 'is_active', 'description') # Making some fields editable in the list view
 
 @admin.register(Product)
 class ProductAdmin(admin.ModelAdmin):
