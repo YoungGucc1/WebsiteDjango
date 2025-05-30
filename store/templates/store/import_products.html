@@ -1,0 +1,38 @@
+{% extends "store/base.html" %}
+
+{% block title %}
+    {{ page_title|default:"Import Products" }}
+{% endblock title %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>{{ page_title|default:"Import Products from Excel" }}</h2>
+    <p>Upload an Excel file (.xlsx or .xls) to import products. Make sure your Excel file has the following columns: <strong>Name</strong>, <strong>Category</strong>, <strong>Article Number</strong>, <strong>Selling price</strong>, and <strong>Purchase price</strong>. The 'Article Number' will be used to identify existing products for updates.</p>
+    <p>Optional columns based on your Product model (e.g., <strong>Description</strong>, <strong>Short Description</strong>, <strong>Product Name 2</strong>) can also be included if present in your Excel file.</p>
+    <p>If a category does not exist, it will be created. If a product with a matching 'Article Number' exists, it will be updated (including its prices); otherwise, a new product and its prices will be created.</p>
+
+    {% if messages %}
+        {% for message in messages %}
+            <div class="alert {% if message.tags %}alert-{{ message.tags }}{% else %}alert-info{% endif %} alert-dismissible fade show" role="alert">
+                {{ message }}
+                <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+            </div>
+        {% endfor %}
+    {% endif %}
+
+    <form method="post" enctype="multipart/form-data">
+        {% csrf_token %}
+        <div class="mb-3">
+            {{ form.excel_file.label_tag }}
+            {{ form.excel_file }}
+            {% if form.excel_file.help_text %}
+                <small class="form-text text-muted">{{ form.excel_file.help_text }}</small>
+            {% endif %}
+            {% for error in form.excel_file.errors %}
+                <div class="invalid-feedback d-block">{{ error }}</div>
+            {% endfor %}
+        </div>
+        <button type="submit" class="btn btn-primary">Upload and Import</button>
+    </form>
+</div>
+{% endblock content %}

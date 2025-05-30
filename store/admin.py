@@ -1,4 +1,5 @@
 from django.contrib import admin
+from django.urls import reverse
 from django.utils.html import format_html
 from .models import Image, Category, Tag, Price, Product
 
@@ -57,3 +58,8 @@ class ProductAdmin(admin.ModelAdmin):
     prepopulated_fields = {'slug': ('name',)}
     filter_horizontal = ('tags', 'images')
     raw_id_fields = ('category',)
+
+    def changelist_view(self, request, extra_context=None):
+        extra_context = extra_context or {}
+        extra_context['import_url'] = reverse('store:import_products')
+        return super().changelist_view(request, extra_context=extra_context)
