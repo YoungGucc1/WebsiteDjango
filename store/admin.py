@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
-from .models import Image, Category, Tag, Price, Product
+from .models import Image, Category, Tag, Price, Product, Warehouse, Stock, Counterparty
 
 @admin.register(Image)
 class ImageAdmin(admin.ModelAdmin):
@@ -64,3 +64,31 @@ class ProductAdmin(admin.ModelAdmin):
         extra_context = extra_context or {}
         extra_context['import_url'] = reverse('store:import_products')
         return super().changelist_view(request, extra_context=extra_context)
+
+@admin.register(Warehouse)
+class WarehouseAdmin(admin.ModelAdmin):
+    list_display = ('name', 'slug', 'is_active', 'created_at')
+    search_fields = ('name', 'slug', 'address', 'description')
+    list_filter = ('is_active', 'created_at')
+    prepopulated_fields = {'slug': ('name',)}
+    readonly_fields = ('created_at', 'modified_at')
+
+@admin.register(Stock)
+class StockAdmin(admin.ModelAdmin):
+    list_display = ('product', 'warehouse', 'quantity', 'available_quantity', 'last_updated')
+    search_fields = ('product__name', 'warehouse__name')
+    list_filter = ('warehouse', 'last_updated')
+    raw_id_fields = ('product', 'warehouse')
+    readonly_fields = ('created_at', 'modified_at', 'last_updated')
+
+    def available_quantity(self, obj):
+        return obj.available_quantity
+    available_quantity.short_description = 'Available Quantity'
+
+@admin.register(Counterparty)
+class CounterpartyAdmin(admin.ModelAdmin):
+    list_display = ('name', 'slug', 'counterparty_type', 'is_active', 'created_at')
+    search_fields = ('name', 'slug', 'email', 'phone', 'description')
+    list_filter = ('counterparty_type', 'is_active', 'created_at')
+    prepopulated_fields = {'slug': ('name',)}
+    readonly_fields = ('created_at', 'modified_at')

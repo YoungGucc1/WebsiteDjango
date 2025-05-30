@@ -191,6 +191,13 @@ class Price(BaseModel):
         WHOLESALE = 'wholesale', 'Wholesale Price'
         OTHER = 'other', 'Other Price'
 
+    class Currency(models.TextChoices):
+        KZT = 'KZT', 'Казахстанский тенге'        
+        USD = 'USD', 'Доллар США'
+        EUR = 'EUR', 'Евро'
+        RUB = 'RUB', 'Российский рубль' 
+        OTHER = 'OTHER', 'Other Currency'   
+
     product = models.ForeignKey('Product', on_delete=models.CASCADE, related_name='prices')
     price_type = models.CharField(
         max_length=20,
@@ -199,8 +206,14 @@ class Price(BaseModel):
         db_index=True,
         help_text="Type of the price (e.g., selling, purchase, discount)"
     )
+    currency = models.CharField(
+        max_length=10,
+        choices=Currency.choices,
+        default=Currency.KZT,
+        db_index=True,
+        help_text="Currency of the price"
+    )
     amount = models.DecimalField(max_digits=10, decimal_places=2)
-    currency = models.CharField(max_length=3, default='USD', help_text="e.g., USD, EUR")
     description = models.CharField(max_length=100, blank=True, null=True, help_text="Optional: further details about this price")
     is_active = models.BooleanField(default=True, help_text="Is this price currently active?")
 
@@ -264,3 +277,103 @@ class Product(BaseModel):
             return main_image
         # Fall back to the first image if no main image is set
         return self.images.first()
+
+# --- Warehouse Model ---
+class Warehouse(BaseModel):
+    name = models.CharField(max_length=255, unique=True)
+    slug = models.SlugField(max_length=255, unique=True, blank=True)
+    address = models.TextField(blank=True, null=True, help_text="Physical address of the warehouse")
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True, db_index=True, help_text="Is this warehouse currently active?")
+    image = models.ForeignKey(
+        Image,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='warehouses',
+        help_text="Main image for the warehouse"
+    )
+
+    class Meta(BaseModel.Meta):
+        verbose_name_plural = "Warehouses"
+        indexes = [models.Index(fields=['slug']), models.Index(fields=['is_active'])]
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = generate_unique_slug(self, 'name', 'slug')
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return f"{self.name} ({'Active' if self.is_active else 'Inactive'})"
+
+# --- Stock Model ---
+class Stock(BaseModel):
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='stocks')
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='stocks')
+    quantity = models.PositiveIntegerField(default=0, help_text="Available quantity in stock")
+    reserved_quantity = models.PositiveIntegerField(default=0, help_text="Quantity reserved for orders")
+    minimum_stock_level = models.PositiveIntegerField(default=0, help_text="Minimum stock level for alerts")
+    last_updated = models.DateTimeField(auto_now=True, db_index=True)
+
+    class Meta(BaseModel.Meta):
+        unique_together = [['product', 'warehouse']]
+        indexes = [
+            models.Index(fields=['product', 'warehouse']),
+            models.Index(fields=['last_updated']),
+        ]
+        ordering = ['product', 'warehouse']
+
+    def __str__(self):
+        return f"{self.product.name} at {self.warehouse.name}: {self.quantity} units"
+
+    @property
+    def available_quantity(self):
+        """Returns the quantity available after accounting for reservations."""
+        return self.quantity - self.reserved_quantity
+
+# --- Counterparty Model ---
+class Counterparty(BaseModel):
+    class CounterpartyType(models.TextChoices):
+        SUPPLIER = 'supplier', 'Supplier'
+        BUYER = 'buyer', 'Buyer'
+        WORKER = 'worker', 'Worker'
+        CUSTOMER = 'customer', 'Customer'
+        OTHER = 'other', 'Other'
+
+    name = models.CharField(max_length=255, db_index=True)
+    slug = models.SlugField(max_length=255, unique=True, blank=True)
+    counterparty_type = models.CharField(
+        max_length=20,
+        choices=CounterpartyType.choices,
+        help_text="Type of counterparty (e.g., supplier, buyer, worker)",
+        db_index=True
+    )
+    email = models.EmailField(blank=True, null=True, help_text="Contact email")
+    phone = models.CharField(max_length=20, blank=True, null=True, help_text="Contact phone number")
+    address = models.TextField(blank=True, null=True, help_text="Physical or mailing address")
+    description = models.TextField(blank=True, null=True)
+    is_active = models.BooleanField(default=True, db_index=True, help_text="Is this counterparty active?")
+    image = models.ForeignKey(
+        Image,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name='counterparties',
+        help_text="Main image or logo for the counterparty"
+    )
+
+    class Meta(BaseModel.Meta):
+        indexes = [
+            models.Index(fields=['slug']),
+            models.Index(fields=['counterparty_type', 'is_active']),
+        ]
+        ordering = ['name', 'counterparty_type']
+
+    def save(self, *args, **kwargs):
+        if not self.slug:
+            self.slug = generate_unique_slug(self, 'name', 'slug')
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        type_display = self.get_counterparty_type_display()
+        return f"{self.name} ({type_display})"
