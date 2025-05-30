@@ -5,6 +5,7 @@ from django.utils import timezone
 from PIL import Image as PILImage
 import os
 from decimal import Decimal
+from django.contrib.auth.models import User
 
 # --- Helper Function for Unique Slugs ---
 def generate_unique_slug(instance, source_field='name', slug_field='slug'):
@@ -58,6 +59,7 @@ class Image(BaseModel):
         PREVIEW = 'preview', 'Preview'
         PACKAGING = 'packaging', 'Packaging'
         LOGO = 'logo', 'Logo'
+        AUDIT = 'audit', 'Audit Photo'
     
     name = models.CharField(max_length=255, db_index=True, blank=True, null=True)
     file_path = models.ImageField(upload_to='images/')
@@ -277,6 +279,43 @@ class Product(BaseModel):
             return main_image
         # Fall back to the first image if no main image is set
         return self.images.first()
+
+# --- Worker Product Audit Model ---
+class WorkerProductAudit(BaseModel):
+    product = models.OneToOneField(Product, on_delete=models.CASCADE, related_name='worker_audit_details')
+    last_audited_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='audited_products')
+    quantity_recorded = models.PositiveIntegerField(null=True, blank=True)
+    photo_taken = models.ForeignKey(
+        Image, 
+        on_delete=models.SET_NULL, 
+        null=True, blank=True, 
+        related_name='audit_photos',
+        limit_choices_to={'type': Image.ImageType.AUDIT} # Ensure only audit images can be linked
+    )
+    is_completed = models.BooleanField(default=False, db_index=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta(BaseModel.Meta):
+        ordering = ['product__name']
+        verbose_name = "Worker Product Audit"
+        verbose_name_plural = "Worker Product Audits"
+
+    def save(self, *args, **kwargs):
+        if self.quantity_recorded is not None and self.photo_taken is not None:
+            if not self.is_completed: # Only update completed_at if it's newly completed
+                self.is_completed = True
+                self.completed_at = timezone.now()
+        else:
+            # If either is None, or if it was completed but now isn't (e.g. photo removed)
+            if self.is_completed: 
+                self.is_completed = False
+                self.completed_at = None
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        status = "Completed" if self.is_completed else "Pending"
+        worker_name = self.last_audited_by.username if self.last_audited_by else "N/A"
+        return f"Audit for {self.product.name} by {worker_name} - {status}"
 
 # --- Warehouse Model ---
 class Warehouse(BaseModel):

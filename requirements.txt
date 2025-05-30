@@ -5,8 +5,9 @@ sqlparse==0.5.3
 tzdata==2025.2
 pandas
 openpyxl
+django-bootstrap5
 # Add these if/when implementing additional features
-# django-crispy-forms==2.1
+django-crispy-forms==2.1
 # django-filter==23.5
 # djangorestframework==3.15.0
 # stripe==8.4.0

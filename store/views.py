@@ -1,268 +1,354 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.views.generic import ListView, DetailView
-from .models import Product, Category, Tag, Price
-from .forms import ProductImportForm
-import pandas as pd
-from django.db import transaction
-from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.utils import timezone
+from django.db.models import Prefetch
+from .models import Product, Category, Tag, Image, Price, Warehouse, Stock, Counterparty, WorkerProductAudit
+from .forms import ProductForm, ImageForm, CategoryForm, TagForm, PriceForm, WarehouseForm, StockForm, CounterpartyForm, WorkerProductAuditForm
+from django.http import HttpResponse
+from openpyxl import load_workbook
 from decimal import Decimal
+import os
+from django.conf import settings
+from django.core.files.uploadedfile import InMemoryUploadedFile
+import io
 
+# Basic Views
 def home(request):
-    """Homepage view showing featured products"""
-    featured_products = Product.objects.filter(is_featured=True, is_active=True)[:8]
-    categories = Category.objects.all()[:6]
-    
-    context = {
-        'featured_products': featured_products,
-        'categories': categories,
-        'page_title': 'Home',
-    }
-    return render(request, 'store/home.html', context)
+    products = Product.objects.filter(is_active=True, is_featured=True).prefetch_related(
+        Prefetch('images', queryset=Image.objects.filter(is_main=True), to_attr='main_product_image'),
+        Prefetch('prices', queryset=Price.objects.filter(is_active=True, price_type=Price.PriceType.SELLING).order_by('amount'), to_attr='selling_prices')
+    )[:10] # Limit to 10 featured products for the homepage
 
-class ProductListView(ListView):
-    """View for listing all products, can be filtered by category"""
-    model = Product
-    template_name = 'store/product_list.html'
-    context_object_name = 'products'
-    paginate_by = 12
-    
-    def get_queryset(self):
-        queryset = Product.objects.filter(is_active=True)
+    # Efficiently get the main image and lowest selling price
+    for product in products:
+        product.display_image = product.main_product_image[0] if product.main_product_image else (product.images.first() if product.images.exists() else None)
+        product.display_price = product.selling_prices[0] if product.selling_prices else None
         
-        # Filter by category if provided in URL
-        category_slug = self.kwargs.get('category_slug')
-        if category_slug:
-            category = get_object_or_404(Category, slug=category_slug)
-            queryset = queryset.filter(category=category)
-            
-        # Filter by tag if provided in URL
-        tag_slug = self.kwargs.get('tag_slug')
-        if tag_slug:
-            tag = get_object_or_404(Tag, slug=tag_slug)
-            queryset = queryset.filter(tags=tag)
-        
-        return queryset
-    
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        
-        # Add category info if filtering by category
-        category_slug = self.kwargs.get('category_slug')
-        if category_slug:
-            category = get_object_or_404(Category, slug=category_slug)
-            context['category'] = category
-            context['page_title'] = f'Products in {category.name}'
-        else:
-            context['page_title'] = 'All Products'
-            
-        # Add tag info if filtering by tag
-        tag_slug = self.kwargs.get('tag_slug')
-        if tag_slug:
-            tag = get_object_or_404(Tag, slug=tag_slug)
-            context['tag'] = tag
-            context['page_title'] = f'Products tagged with {tag.name}'
-            
-        # Add categories for sidebar
-        context['categories'] = Category.objects.all()
-        
-        return context
+    categories = Category.objects.filter(parent__isnull=True).prefetch_related('children') # Top-level categories
+    return render(request, 'store/home.html', {'products': products, 'categories': categories})
 
-class ProductDetailView(DetailView):
-    """View for showing product details"""
-    model = Product
-    template_name = 'store/product_detail.html'
-    context_object_name = 'product'
-    slug_url_kwarg = 'product_slug'
+def product_list(request, category_slug=None):
+    category = None
+    products_query = Product.objects.filter(is_active=True).select_related('category').prefetch_related(
+        Prefetch('images', queryset=Image.objects.filter(is_main=True), to_attr='main_product_image_list'),
+        Prefetch('prices', queryset=Price.objects.filter(is_active=True, price_type=Price.PriceType.SELLING).order_by('amount'), to_attr='selling_prices_list')
+    )
+
+    if category_slug:
+        category = get_object_or_404(Category, slug=category_slug)
+        products_query = products_query.filter(category=category)
     
-    def get_queryset(self):
-        return Product.objects.filter(is_active=True)
+    products = list(products_query) # Evaluate the queryset
+
+    for product in products:
+        product.display_image = product.main_product_image_list[0] if product.main_product_image_list else (product.images.first() if product.images.exists() else None)
+        product.display_price = product.selling_prices_list[0] if product.selling_prices_list else None
+
+    categories = Category.objects.all()
+    return render(request, 'store/product_list.html', {'products': products, 'category': category, 'categories': categories})
+
+def product_detail(request, slug):
+    product = get_object_or_404(Product.objects.prefetch_related(
+        'images', 
+        Prefetch('prices', queryset=Price.objects.filter(is_active=True).order_by('price_type', 'amount'))
+    ), slug=slug, is_active=True)
     
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        product = self.get_object()
+    main_image = product.images.filter(is_main=True).first()
+    if not main_image:
+        main_image = product.images.first()
         
-        # Add related products
-        context['related_products'] = Product.objects.filter(
-            category=product.category,
-            is_active=True
-        ).exclude(id=product.id)[:4]
-        
-        context['page_title'] = product.name
-        return context
+    other_images = product.images.exclude(id=main_image.id) if main_image else product.images.all()
+    
+    # Get the first active selling price, or any active price if no selling price
+    current_price = product.prices.filter(price_type=Price.PriceType.SELLING, is_active=True).order_by('amount').first()
+    if not current_price:
+        current_price = product.prices.filter(is_active=True).order_by('amount').first()
+
+    return render(request, 'store/product_detail.html', {
+        'product': product,
+        'main_image': main_image,
+        'other_images': other_images,
+        'current_price': current_price
+    })
 
 def category_list(request):
-    """View for listing all categories"""
-    categories = Category.objects.all()
-    return render(request, 'store/category_list.html', {
-        'categories': categories,
-        'page_title': 'Categories',
+    categories = Category.objects.filter(parent__isnull=True).prefetch_related('children__children') # Fetch up to 3 levels
+    return render(request, 'store/category_list.html', {'categories': categories})
+
+# Worker Product Audit Views
+@login_required
+def worker_product_list(request):
+    # Fetch all products and their audit status
+    # Using select_related for product and prefetch_related for audit details
+    # to optimize database queries.
+    products_with_audit = []
+    all_products = Product.objects.filter(is_active=True).order_by('name')
+
+    for product in all_products:
+        audit_details, created = WorkerProductAudit.objects.get_or_create(
+            product=product,
+            defaults={'last_audited_by': None} # Default if creating
+        )
+        # If created, it means no audit existed, so it's pending.
+        # If get_or_create found an existing one, its is_completed status is used.
+        products_with_audit.append({
+            'product': product,
+            'audit_details': audit_details,
+            'is_completed': audit_details.is_completed
+        })
+
+    return render(request, 'store/worker_product_list.html', {'products_with_audit': products_with_audit})
+
+@login_required
+def worker_product_audit_view(request, product_id):
+    product = get_object_or_404(Product, id=product_id, is_active=True)
+    # Get or create an audit instance for this product
+    audit_instance, created = WorkerProductAudit.objects.get_or_create(
+        product=product,
+        defaults={'last_audited_by': request.user if request.user.is_authenticated else None}
+    )
+
+    if request.method == 'POST':
+        form = WorkerProductAuditForm(request.POST, request.FILES, instance=audit_instance)
+        if form.is_valid():
+            audit_to_save = form.save(commit=False)
+            audit_to_save.last_audited_by = request.user # Ensure current user is set
+            
+            # The form's save method handles creating/updating the Image instance
+            # and linking it to photo_taken.
+            # The WorkerProductAudit model's save method handles setting is_completed.
+            audit_to_save.save()
+            
+            return redirect('store:worker_product_list')
+    else:
+        form = WorkerProductAuditForm(instance=audit_instance)
+
+    return render(request, 'store/worker_product_audit_form.html', {
+        'form': form,
+        'product': product,
+        'audit_instance': audit_instance
     })
 
-@transaction.atomic # Ensure all or nothing for database operations
+
+# --- Excel Import View ---
+@login_required # Ensure only logged-in users can access
 def import_products_from_excel(request):
     if request.method == 'POST':
-        form = ProductImportForm(request.POST, request.FILES)
-        if form.is_valid():
-            excel_file = request.FILES['excel_file']
-            try:
-                df = pd.read_excel(excel_file)
+        excel_file = request.FILES.get('excel_file')
+        if not excel_file:
+            return HttpResponse("No file uploaded.", status=400)
+        if not excel_file.name.endswith(('.xlsx', '.xls')):
+            return HttpResponse("Invalid file format. Please upload an Excel file.", status=400)
 
-                # Sanitize column names from the DataFrame (strip spaces)
-                original_columns = list(df.columns)
-                sanitized_columns = [col.strip() for col in original_columns]
-                df.columns = sanitized_columns
-                
-                # Store a mapping from original (potentially with spaces) to sanitized for error messages if needed
-                # col_map = dict(zip(original_columns, sanitized_columns))
+        try:
+            workbook = load_workbook(excel_file)
+            sheet = workbook.active # Assumes data is in the first sheet
 
-                # Expected column names (should be clean, no extra spaces here)
-                # And 'Selling price', 'Purchase price' from screenshot.
-                col_product_name = 'Name' 
-                col_article_number = 'Article Number' 
-                col_category_name = 'Category'       
-                col_selling_price = 'Selling price'  
-                col_purchase_price = 'Purchase price'
-
-                # Optional columns (examples, user can have more based on Product model)
-                col_description = 'Description' 
-                col_short_description = 'Short Description'
-                col_product_name_2 = 'Product Name 2' # Or 'name_2' from model, if user wants to map it
-
-                required_excel_columns = [
-                    col_product_name, 
-                    col_article_number, 
-                    col_category_name, 
-                    col_selling_price, 
-                    col_purchase_price
-                ]
-                missing_excel_columns = [col for col in required_excel_columns if col not in df.columns]
-                
-                if missing_excel_columns:
-                    messages.error(request, f"Missing required columns in Excel: {', '.join(missing_excel_columns)}. Expected: {', '.join(required_excel_columns)}")
-                    return redirect('import_products')
-
-                products_created_count = 0
-                products_updated_count = 0
-                errors = []
-
-                for index, row in df.iterrows():
-                    try:
-                        # Required fields from Excel based on user feedback and screenshot
-                        product_name_val = row[col_product_name]
-                        article_number_val = row[col_article_number]
-                        category_name_val = row[col_category_name]
-                        selling_price_val = row[col_selling_price]
-                        purchase_price_val = row[col_purchase_price]
-
-                        # Check for empty but present required values
-                        if pd.isna(product_name_val) or \
-                           pd.isna(article_number_val) or \
-                           pd.isna(category_name_val) or \
-                           pd.isna(selling_price_val) or \
-                           pd.isna(purchase_price_val):
-                            errors.append(f"Row {index + 2}: Missing data in one of the required columns ('{col_product_name}', '{col_article_number}', '{col_category_name}', '{col_selling_price}', '{col_purchase_price}').")
-                            continue
-                        
-                        # Convert to string and strip whitespace
-                        product_name_str = str(product_name_val).strip()
-                        article_number_str = str(article_number_val).strip()
-                        category_name_str = str(category_name_val).strip()
-
-                        if not product_name_str or not article_number_str or not category_name_str: # Prices are numeric, already checked by pd.isna
-                             errors.append(f"Row {index + 2}: Required text fields ('{col_product_name}', '{col_article_number}', '{col_category_name}') cannot be empty after stripping whitespace.")
-                             continue
-
-                        # Get or create category
-                        category, cat_created = Category.objects.get_or_create(
-                            name=category_name_str,
-                            defaults={'name': category_name_str} # Ensure name is passed for creation
-                        )
-                        if cat_created:
-                            messages.info(request, f"Category '{category.name}' was created.")
-
-                        # Prepare product defaults from optional Excel columns
-                        product_defaults = {
-                            'name': product_name_str,
-                            'category': category,
-                            'is_active': True # Default to active
-                        }
-                        # Optional: name_2 (Product.name_2)
-                        if col_product_name_2 in df.columns and pd.notna(row[col_product_name_2]):
-                            product_defaults['name_2'] = str(row[col_product_name_2]).strip()
-                        # Optional: description (Product.description)
-                        if col_description in df.columns and pd.notna(row[col_description]):
-                            product_defaults['description'] = str(row[col_description]).strip()
-                        # Optional: short_description (Product.short_description)
-                        if col_short_description in df.columns and pd.notna(row[col_short_description]):
-                            product_defaults['short_description'] = str(row[col_short_description]).strip()
-                        
-                        # Add other optional fields from Product model here if they are in the Excel
-                        # e.g., is_featured, etc.
-                        # if 'Is Featured' in df.columns and pd.notna(row['Is Featured']):
-                        #    product_defaults['is_featured'] = bool(row['Is Featured'])
-
-
-                        # Create or update product using article_number
-                        product, product_created = Product.objects.update_or_create(
-                            article_number=article_number_str,
-                            defaults=product_defaults
-                        )
-                        
-                        if product_created:
-                            products_created_count += 1
-                        else:
-                            products_updated_count += 1
-                        
-                        # Create or update Selling Price
-                        Price.objects.update_or_create(
-                            product=product,
-                            price_type=Price.PriceType.SELLING,
-                            currency='USD', # Assuming USD, make this dynamic if currency can vary per row/import
-                            defaults={
-                                'amount': Decimal(selling_price_val),
-                                'is_active': True,  # Selling price is usually active
-                                'description': 'Imported Selling Price' # Optional: add a default description
-                            }
-                        )
-                        
-                        # Create or update Purchase Price
-                        Price.objects.update_or_create(
-                            product=product,
-                            price_type=Price.PriceType.PURCHASE,
-                            currency='USD', # Assuming USD
-                            defaults={
-                                'amount': Decimal(purchase_price_val),
-                                'is_active': True, # Or False, depending on business logic
-                                'description': 'Imported Purchase Price' # Optional: add a default description
-                            }
-                        )
-
-                    except Exception as e:
-                        errors.append(f"Row {index + 2}: Error processing product '{row.get(col_product_name, 'N/A')}' (Article: {row.get(col_article_number, 'N/A')}): {str(e)}")
-                
-                if products_created_count > 0:
-                    messages.success(request, f"Successfully created {products_created_count} products.")
-                if products_updated_count > 0:
-                    messages.success(request, f"Successfully updated {products_updated_count} products.")
-                if not products_created_count and not products_updated_count and not errors:
-                     messages.info(request, "No new products were created or updated. The file might be empty or products already exist.")
-                
-                for error_msg in errors:
-                    messages.error(request, error_msg)
-
-                return redirect('import_products') # Redirect to the same page to show messages
-
-            except pd.errors.EmptyDataError:
-                messages.error(request, "The uploaded Excel file is empty.")
-            except Exception as e:
-                messages.error(request, f"Error processing Excel file: {str(e)}")
-        else:
-            messages.error(request, "Invalid file submitted.")
+            # --- Header Mapping (Adjust based on your Excel file) ---
+            # Example: {'Excel Column Name': 'model_field_name'}
+            header_map = {
+                'Наименование': 'name',
+                'Наименование (доп)': 'name_2',
+                'Артикул': 'article_number',
+                'Описание': 'description',
+                'Краткое описание': 'short_description',
+                'Категория': 'category_name', # Will be used to find/create Category object
+                'Теги': 'tags_str',           # Comma-separated string of tags
+                'Цена продажи': 'selling_price',
+                'Валюта продажи': 'selling_currency',
+                'Цена закупки': 'purchase_price',
+                'Валюта закупки': 'purchase_currency',
+                'Количество на складе': 'stock_quantity',
+                'Склад': 'warehouse_name',
+                'Изображение (путь или URL)': 'image_path_or_url', # Handle local path or URL
+                'Главное изображение': 'is_main_image', # 'Да' or 'Нет'
+                'Активен': 'is_active_str', # 'Да' or 'Нет'
+                'В избранном': 'is_featured_str', # 'Да' or 'Нет'
+            }
             
-    else: # GET request
-        form = ProductImportForm()
-        
-    return render(request, 'store/import_products.html', {
-        'form': form,
-        'page_title': 'Import Products from Excel'
-    })
+            headers = [cell.value for cell in sheet[1]] # Get headers from the first row
+            
+            # Validate required headers
+            required_excel_headers = ['Наименование', 'Категория', 'Цена продажи'] # Example
+            for req_header in required_excel_headers:
+                if req_header not in headers:
+                    return HttpResponse(f"Missing required Excel column: {req_header}", status=400)
+
+            products_created_count = 0
+            products_updated_count = 0
+            errors = []
+
+            for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                if not any(row): # Skip empty rows
+                    continue
+
+                product_data = {}
+                for col_idx, cell_value in enumerate(row):
+                    header_name = headers[col_idx]
+                    model_field = header_map.get(header_name)
+                    if model_field:
+                        product_data[model_field] = cell_value
+                
+                if not product_data.get('name'):
+                    errors.append(f"Row {row_idx}: Product name is missing. Skipping.")
+                    continue
+
+                try:
+                    # --- Handle Category ---
+                    category_name = product_data.pop('category_name', None)
+                    if not category_name:
+                        errors.append(f"Row {row_idx} (Product: {product_data.get('name')}): Category name is missing. Skipping.")
+                        continue
+                    category, _ = Category.objects.get_or_create(name=category_name, defaults={'slug': slugify(category_name)})
+
+                    # --- Handle Tags ---
+                    tags_str = product_data.pop('tags_str', '')
+                    tag_instances = []
+                    if tags_str:
+                        tag_names = [name.strip() for name in tags_str.split(',') if name.strip()]
+                        for tag_name in tag_names:
+                            tag, _ = Tag.objects.get_or_create(name=tag_name, defaults={'slug': slugify(tag_name)})
+                            tag_instances.append(tag)
+                    
+                    # --- Handle Prices ---
+                    selling_price_val = product_data.pop('selling_price', None)
+                    selling_currency_str = product_data.pop('selling_currency', 'KZT') # Default currency
+                    purchase_price_val = product_data.pop('purchase_price', None)
+                    purchase_currency_str = product_data.pop('purchase_currency', 'KZT')
+
+                    # --- Handle Stock ---
+                    stock_quantity_val = product_data.pop('stock_quantity', 0)
+                    warehouse_name_str = product_data.pop('warehouse_name', 'Основной склад') # Default warehouse
+                    warehouse, _ = Warehouse.objects.get_or_create(name=warehouse_name_str, defaults={'slug': slugify(warehouse_name_str)})
+
+                    # --- Handle Boolean Fields ---
+                    is_active = str(product_data.pop('is_active_str', 'Да')).lower() in ['да', 'yes', 'true', '1']
+                    is_featured = str(product_data.pop('is_featured_str', 'Нет')).lower() in ['да', 'yes', 'true', '1']
+
+                    # --- Prepare Product Fields ---
+                    # Remove price/stock related fields that are not direct Product model fields
+                    product_fields = {k: v for k, v in product_data.items() if hasattr(Product, k) and k not in ['image_path_or_url', 'is_main_image']}
+                    product_fields['category'] = category
+                    product_fields['is_active'] = is_active
+                    product_fields['is_featured'] = is_featured
+                    
+                    # --- Create or Update Product ---
+                    # Use article_number as a unique identifier if available, otherwise name
+                    identifier_field = 'article_number' if product_fields.get('article_number') else 'name'
+                    identifier_value = product_fields.get(identifier_field)
+
+                    if identifier_field == 'name' and not identifier_value: # Should have been caught earlier
+                        errors.append(f"Row {row_idx}: Product name is missing after processing. Skipping.")
+                        continue
+                    
+                    product_instance = None
+                    if identifier_value:
+                        try:
+                            if identifier_field == 'article_number':
+                                product_instance = Product.objects.get(article_number=identifier_value)
+                            else: # name
+                                product_instance = Product.objects.get(name=identifier_value, category=category) # Name might not be unique across categories
+                            
+                            # Update existing product
+                            for key, value in product_fields.items():
+                                setattr(product_instance, key, value)
+                            product_instance.save()
+                            products_updated_count += 1
+                        except Product.DoesNotExist:
+                            pass # Will create new below
+
+                    if not product_instance:
+                        product_instance = Product.objects.create(**product_fields)
+                        products_created_count += 1
+                    
+                    # --- Set Tags (after product is saved) ---
+                    if tag_instances:
+                        product_instance.tags.set(tag_instances)
+
+                    # --- Handle Prices (after product is saved) ---
+                    if selling_price_val is not None:
+                        try:
+                            selling_price_decimal = Decimal(str(selling_price_val))
+                            Price.objects.update_or_create(
+                                product=product_instance,
+                                price_type=Price.PriceType.SELLING,
+                                currency=selling_currency_str.upper(),
+                                defaults={'amount': selling_price_decimal, 'is_active': True}
+                            )
+                        except ValueError:
+                            errors.append(f"Row {row_idx} (Product: {product_instance.name}): Invalid selling price format '{selling_price_val}'.")
+                    
+                    if purchase_price_val is not None:
+                        try:
+                            purchase_price_decimal = Decimal(str(purchase_price_val))
+                            Price.objects.update_or_create(
+                                product=product_instance,
+                                price_type=Price.PriceType.PURCHASE,
+                                currency=purchase_currency_str.upper(),
+                                defaults={'amount': purchase_price_decimal, 'is_active': True}
+                            )
+                        except ValueError:
+                            errors.append(f"Row {row_idx} (Product: {product_instance.name}): Invalid purchase price format '{purchase_price_val}'.")
+
+                    # --- Handle Stock (after product is saved) ---
+                    if stock_quantity_val is not None:
+                        try:
+                            stock_quantity_int = int(stock_quantity_val)
+                            Stock.objects.update_or_create(
+                                product=product_instance,
+                                warehouse=warehouse,
+                                defaults={'quantity': stock_quantity_int}
+                            )
+                        except ValueError:
+                             errors.append(f"Row {row_idx} (Product: {product_instance.name}): Invalid stock quantity format '{stock_quantity_val}'.")
+
+
+                    # --- Handle Image ---
+                    image_path_or_url = product_data.get('image_path_or_url')
+                    is_main_image_str = str(product_data.get('is_main_image', 'Нет')).lower()
+                    is_main = is_main_image_str in ['да', 'yes', 'true', '1']
+
+                    if image_path_or_url:
+                        try:
+                            img_name_default = f"{slugify(product_instance.name)}_{product_instance.id.hex[:8]}"
+                            
+                            # Check if it's a local file path
+                            # This is a basic check; more robust path validation might be needed
+                            if os.path.exists(image_path_or_url) and os.path.isfile(image_path_or_url):
+                                with open(image_path_or_url, 'rb') as f:
+                                    # Create an InMemoryUploadedFile for Django's ImageField
+                                    img_file = InMemoryUploadedFile(
+                                        file=io.BytesIO(f.read()),
+                                        field_name='file_path',
+                                        name=os.path.basename(image_path_or_url),
+                                        content_type='image/jpeg', # Adjust content type if needed
+                                        size=os.path.getsize(image_path_or_url),
+                                        charset=None
+                                    )
+                                image_instance = Image.objects.create(
+                                    name=img_name_default,
+                                    file_path=img_file,
+                                    type=Image.ImageType.PRODUCT,
+                                    is_main=is_main 
+                                )
+                                product_instance.images.add(image_instance)
+                            # TODO: Add handling for image URLs (download and save)
+                            # else: (handle URL)
+                            #    errors.append(f"Row {row_idx} (Product: {product_instance.name}): Image path '{image_path_or_url}' not found or not a file. URL import not yet implemented.")
+                        except Exception as e:
+                            errors.append(f"Row {row_idx} (Product: {product_instance.name}): Error processing image '{image_path_or_url}': {e}")
+                
+                except Exception as e:
+                    errors.append(f"Row {row_idx} (Product: {product_data.get('name', 'Unknown')}): General error - {e}")
+            
+            # --- Prepare Summary ---
+            summary_message = f"Import completed. Products created: {products_created_count}, Products updated: {products_updated_count}."
+            if errors:
+                summary_message += "\nErrors encountered:\n" + "\n".join(errors)
+            
+            return HttpResponse(summary_message, content_type="text/plain")
+
+        except Exception as e:
+            return HttpResponse(f"An error occurred during processing: {e}", status=500)
+    
+    return render(request, 'store/import_products.html')

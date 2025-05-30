@@ -38,7 +38,12 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'store',  # Add our new app
+    'crispy_forms',
+    'bootstrap5',
 ]
+
+CRISPY_ALLOWED_TEMPLATE_PACKS = "bootstrap5"
+CRISPY_TEMPLATE_PACK = "bootstrap5"
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -131,3 +136,8 @@ STATICFILES_DIRS = [
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# --- Authentication Settings ---
+LOGIN_REDIRECT_URL = 'store:worker_product_list'  # Redirect to worker product list after login
+LOGOUT_REDIRECT_URL = 'store:home'  # Redirect to homepage after logout
+# LOGIN_URL = 'login' # If you have a custom login URL name, specify it here. Default is /accounts/login/
