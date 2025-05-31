@@ -5,8 +5,15 @@
     {{ block.super }}
     <li>
         {% if import_url %}
-            <a href="{{ import_url }}" class="button"> <!-- Changed class from addlink to button -->
+            <a href="{{ import_url }}" class="button">
                 {% translate 'Import Products from Excel' %}
+            </a>
+        {% endif %}
+    </li>
+    <li>
+        {% if auto_image_search_url %}
+            <a href="{{ auto_image_search_url }}" class="button">
+                {% translate 'Auto Search Product Images' %}
             </a>
         {% endif %}
     </li>

@@ -352,3 +352,130 @@ def import_products_from_excel(request):
             return HttpResponse(f"An error occurred during processing: {e}", status=500)
     
     return render(request, 'store/import_products.html')
+
+# --- Auto Image Search View ---
+from .image_search_utils import process_product_image_search
+from .forms import ImageSearchSettingsForm # Import the new form
+
+@login_required # Or use @staff_member_required for admin-only access
+def auto_search_product_images_view(request):
+    """
+    A view to allow users to set parameters and trigger automatic image 
+    searching and saving for all products.
+    """
+    context = {'title': "Automatic Product Image Search"}
+    form = ImageSearchSettingsForm(request.POST or None)
+    context['form'] = form
+
+    if request.method == 'POST':
+        if form.is_valid():
+            num_results = form.cleaned_data['num_results']
+            img_size = form.cleaned_data['img_size']
+            img_type = form.cleaned_data['img_type']
+            img_color_type = form.cleaned_data['img_color_type']
+            file_type = form.cleaned_data['file_type']
+            safe_search = form.cleaned_data['safe_search']
+
+            products_processed_count = 0
+            total_images_added = 0
+            products_with_errors = []
+
+            all_products = Product.objects.filter(is_active=True)
+
+            for product in all_products:
+                try:
+                    images_added_for_product = process_product_image_search(
+                        product,
+                        num_results=num_results,
+                        img_size=img_size,
+                        img_type=img_type,
+                        img_color_type=img_color_type,
+                        file_type=file_type,
+                        safe_search=safe_search
+                    )
+                    if images_added_for_product > 0:
+                        total_images_added += images_added_for_product
+                    products_processed_count += 1
+                except Exception as e:
+                    error_message = f"Error processing product {product.name} (ID: {product.id}): {e}"
+                    print(error_message)
+                    products_with_errors.append({'name': product.name, 'id': product.id, 'error': str(e)})
+            
+            context.update({
+                'products_processed_count': products_processed_count,
+                'total_images_added': total_images_added,
+                'products_with_errors': products_with_errors,
+                'search_triggered': True # Flag to show results section
+            })
+        else:
+            context['search_triggered'] = False # Form is invalid, show form with errors
+    
+    # For GET request or if form is invalid on POST, just render the form page
+    # The template name will be 'store/auto_image_search_form.html'
+    return render(request, 'store/auto_image_search_form.html', context)
+
+from django.urls import reverse
+
+def metro_home_view(request):
+    # Fetch top-level categories and their direct children
+    categories = Category.objects.filter(parent__isnull=True).prefetch_related('children')
+
+    # Fetch products (e.g., latest 20 active products)
+    # Reusing the prefetch logic from the 'home' view for consistency
+    products_query = Product.objects.filter(is_active=True).order_by('-created_at').prefetch_related(
+        Prefetch('images', queryset=Image.objects.filter(is_main=True), to_attr='main_product_image_list'), # Use a different to_attr if home uses main_product_image
+        Prefetch('prices', queryset=Price.objects.filter(is_active=True, price_type=Price.PriceType.SELLING).order_by('amount'), to_attr='selling_prices_list')
+    )[:24] # Show more products
+
+    products = list(products_query)
+
+    for product in products:
+        # Prepare display image
+        if product.main_product_image_list:
+            product.display_image = product.main_product_image_list[0]
+        elif product.images.exists():
+            product.display_image = product.images.first()
+        else:
+            product.display_image = None # Template will handle placeholder
+
+        # Prepare display price
+        if product.selling_prices_list:
+            product.display_price = product.selling_prices_list[0]
+        else: # Fallback to any active price if no selling price
+            any_active_price = product.prices.filter(is_active=True).order_by('amount').first()
+            product.display_price = any_active_price
+            
+        # Add a default URL for the product card link
+        try:
+            product.default_url = reverse('store:product_detail', kwargs={'slug': product.slug})
+        except Exception: # Handle cases where reverse might fail (e.g. no slug)
+            product.default_url = "#"
+
+
+    # Add default URLs for categories
+    for category in categories:
+        try:
+            category.default_url = reverse('store:product_list_by_category', kwargs={'category_slug': category.slug})
+        except Exception:
+            category.default_url = "#"
+        if hasattr(category, 'children'):
+            for child in category.children.all():
+                try:
+                    child.default_url = reverse('store:product_list_by_category', kwargs={'category_slug': child.slug})
+                except Exception:
+                    child.default_url = "#"
+                    
+    # The template uses category.get_absolute_url_if_exists_else_default_url
+    # and product.get_absolute_url_if_exists_else_default_url
+    # For now, I'll pass the objects and let the template try to access 'default_url'
+    # or a get_absolute_url method if it exists on the model.
+    # To be robust, these should be methods on the models.
+    # For now, the template will use `product.default_url` and `category.default_url`
+    # I will modify the template to use these.
+
+    context = {
+        'categories': categories,
+        'products': products,
+        'store_name': getattr(settings, 'STORE_NAME', 'Metro Store') # Example: get store name from settings
+    }
+    return render(request, 'store/metro_home.html', context)

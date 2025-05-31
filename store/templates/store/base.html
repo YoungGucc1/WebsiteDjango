@@ -47,6 +47,9 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'store:category_list' %}">Categories</a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{% url 'store:metro_home' %}">Metro View</a>
+                    </li>
                     {% if user.is_authenticated %}
                     <li class="nav-item">
                         <a class="nav-link" href="{% url 'store:worker_product_list' %}">Worker Audit</a>

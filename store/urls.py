@@ -5,6 +5,7 @@ app_name = 'store'
 
 urlpatterns = [
     path('', views.home, name='home'),
+    path('metro-home/', views.metro_home_view, name='metro_home'),
     path('products/', views.product_list, name='product_list'), # Changed from ProductListView
     path('product/<slug:slug>/', views.product_detail, name='product_detail'), # Changed from ProductDetailView and product_slug to slug
     path('products/<slug:category_slug>/', views.product_list, name='product_list_by_category'), # Added for consistency if used elsewhere, points to same view
@@ -16,6 +17,7 @@ urlpatterns = [
     path('tag/<slug:tag_slug>/', views.product_list, name='tag_products'), # Assuming product_list handles tag filtering
     path('categories/', views.category_list, name='category_list'),
     path('import-products/', views.import_products_from_excel, name='import_products'),
+    path('auto-search-images/', views.auto_search_product_images_view, name='auto_search_product_images'),
 
     # Worker Product Audit URLs
     path('worker/products/', views.worker_product_list, name='worker_product_list'),

@@ -94,3 +94,69 @@ class WorkerProductAuditForm(forms.ModelForm):
         if commit:
             audit_instance.save()
         return audit_instance
+
+# --- Image Search Settings Form ---
+IMG_SIZE_OPTIONS = [
+    ("any", "Any Size"), ("huge", "Huge"), ("icon", "Icon"), ("large", "Large"),
+    ("medium", "Medium"), ("small", "Small"), ("xlarge", "XLarge"), ("xxlarge", "XXLarge")
+]
+IMG_TYPE_OPTIONS = [
+    ("any", "Any Type"), ("clipart", "Clipart"), ("face", "Face"), ("lineart", "Lineart"),
+    ("stock", "Stock"), ("photo", "Photo"), ("animated", "Animated")
+]
+IMG_COLOR_TYPE_OPTIONS = [
+    ("any", "Any Color Type"), ("color", "Color"), ("gray", "Grayscale"), ("mono", "Monochrome")
+]
+FILE_TYPE_OPTIONS = [
+    ("any", "Any File Type"), ("bmp", "BMP"), ("gif", "GIF"), ("jpg", "JPG"),
+    ("png", "PNG"), ("svg", "SVG"), ("webp", "WEBP")
+]
+SAFE_SEARCH_OPTIONS = [
+    ("off", "Off (Risky)"), ("active", "Active (Safe)"), ("high", "High"), ("medium", "Medium")
+]
+
+class ImageSearchSettingsForm(forms.Form):
+    num_results = forms.IntegerField(
+        label="Number of Images per Product",
+        min_value=1,
+        max_value=10, # Google API typically returns max 10 per request
+        initial=3,
+        help_text="How many images to attempt to download for each product (1-10)."
+    )
+    img_size = forms.ChoiceField(
+        label="Image Size",
+        choices=IMG_SIZE_OPTIONS,
+        initial="large",
+        required=True
+    )
+    img_type = forms.ChoiceField(
+        label="Image Type",
+        choices=IMG_TYPE_OPTIONS,
+        initial="photo",
+        required=True
+    )
+    img_color_type = forms.ChoiceField(
+        label="Image Color Type",
+        choices=IMG_COLOR_TYPE_OPTIONS,
+        initial="any",
+        required=True
+    )
+    file_type = forms.ChoiceField(
+        label="File Type",
+        choices=FILE_TYPE_OPTIONS,
+        initial="jpg",
+        required=True
+    )
+    safe_search = forms.ChoiceField(
+        label="Safe Search Level",
+        choices=SAFE_SEARCH_OPTIONS,
+        initial="active",
+        required=True
+    )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field_name, field in self.fields.items():
+            field.widget.attrs.update({'class': 'form-control mb-2'})
+            if isinstance(field.widget, forms.Select):
+                field.widget.attrs.update({'class': 'form-select mb-2'})

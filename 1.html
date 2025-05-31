@@ -1,0 +1,135 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Metro eCommerce</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #1f1f1f;
+      color: white;
+      display: flex;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .sidebar {
+      width: 220px;
+      background-color: #2d2d2d;
+      overflow-y: auto;
+      padding: 20px;
+      border-right: 1px solid #333;
+    }
+
+    .sidebar h2 {
+      font-size: 18px;
+      margin-bottom: 16px;
+      color: #999;
+    }
+
+    .category {
+      margin-bottom: 10px;
+      padding: 10px;
+      background-color: #3a3a3a;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .category:hover {
+      background-color: #505050;
+    }
+
+    .content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 20px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 20px;
+    }
+
+    .product {
+      background-color: #0078d7;
+      border-radius: 6px;
+      padding: 15px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      height: 200px;
+      transition: transform 0.2s;
+    }
+
+    .product:hover {
+      transform: scale(1.05);
+    }
+
+    .product img {
+      width: 100%;
+      height: 100px;
+      object-fit: contain;
+      margin-bottom: 10px;
+    }
+
+    .product-title {
+      font-size: 16px;
+      font-weight: bold;
+      margin-bottom: 5px;
+    }
+
+    .product-price {
+      font-size: 14px;
+      color: #fff;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="sidebar">
+    <h2>Categories</h2>
+    <div class="category">Smartphones</div>
+    <div class="category">Headphones</div>
+    <div class="category">Chargers</div>
+    <div class="category">Speakers</div>
+    <div class="category">Accessories</div>
+    <div class="category">More...</div>
+  </div>
+
+  <div class="content">
+    <div class="product">
+      <img src="https://via.placeholder.com/150x100?text=Product" alt="Product">
+      <div class="product-title">Hoco C6</div>
+      <div class="product-price">$15.99</div>
+    </div>
+    <div class="product">
+      <img src="https://via.placeholder.com/150x100?text=Product" alt="Product">
+      <div class="product-title">Awei Y600</div>
+      <div class="product-price">$25.00</div>
+    </div>
+    <div class="product">
+      <img src="https://via.placeholder.com/150x100?text=Product" alt="Product">
+      <div class="product-title">Celebrat C8</div>
+      <div class="product-price">$9.50</div>
+    </div>
+    <div class="product">
+      <img src="https://via.placeholder.com/150x100?text=Product" alt="Product">
+      <div class="product-title">Microlab BP11</div>
+      <div class="product-price">$30.00</div>
+    </div>
+    <div class="product">
+      <img src="https://via.placeholder.com/150x100?text=Product" alt="Product">
+      <div class="product-title">LG G5</div>
+      <div class="product-price">$120.00</div>
+    </div>
+    <!-- Add more product tiles as needed -->
+  </div>
+
+</body>
+</html>

@@ -63,6 +63,7 @@ class ProductAdmin(admin.ModelAdmin):
     def changelist_view(self, request, extra_context=None):
         extra_context = extra_context or {}
         extra_context['import_url'] = reverse('store:import_products')
+        extra_context['auto_image_search_url'] = reverse('store:auto_search_product_images')
         return super().changelist_view(request, extra_context=extra_context)
 
 @admin.register(Warehouse)
