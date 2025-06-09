@@ -18,6 +18,11 @@ urlpatterns = [
     path('categories/', views.category_list, name='category_list'),
     path('import-products/', views.import_products_from_excel, name='import_products'),
     path('auto-search-images/', views.auto_search_product_images_view, name='auto_search_product_images'),
+    path('save-selected-images/', views.save_selected_images_view, name='save_selected_images'),
+
+    # One by one image search
+    path('onebyone-search-images/', views.one_by_one_product_list, name='one_by_one_product_list'),
+    path('onebyone-search-images/<uuid:product_id>/', views.one_by_one_image_search, name='one_by_one_image_search'),
 
     # Worker Product Audit URLs
     path('worker/products/', views.worker_product_list, name='worker_product_list'),

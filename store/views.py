@@ -354,65 +354,120 @@ def import_products_from_excel(request):
     return render(request, 'store/import_products.html')
 
 # --- Auto Image Search View ---
-from .image_search_utils import process_product_image_search
+from .image_search_utils import get_image_search_results, save_image_for_product
 from .forms import ImageSearchSettingsForm # Import the new form
 
 @login_required # Or use @staff_member_required for admin-only access
 def auto_search_product_images_view(request):
     """
-    A view to allow users to set parameters and trigger automatic image 
-    searching and saving for all products.
+    A view to allow users to set parameters and trigger automatic image
+    searching and then select images to save.
     """
     context = {'title': "Automatic Product Image Search"}
     form = ImageSearchSettingsForm(request.POST or None)
     context['form'] = form
 
-    if request.method == 'POST':
-        if form.is_valid():
-            num_results = form.cleaned_data['num_results']
-            img_size = form.cleaned_data['img_size']
-            img_type = form.cleaned_data['img_type']
-            img_color_type = form.cleaned_data['img_color_type']
-            file_type = form.cleaned_data['file_type']
-            safe_search = form.cleaned_data['safe_search']
+    if request.method == 'POST' and form.is_valid():
+        num_results = form.cleaned_data['num_results']
+        img_size = form.cleaned_data['img_size']
+        img_type = form.cleaned_data['img_type']
+        img_color_type = form.cleaned_data['img_color_type']
+        file_type = form.cleaned_data['file_type']
+        safe_search = form.cleaned_data['safe_search']
 
-            products_processed_count = 0
-            total_images_added = 0
-            products_with_errors = []
+        products_with_images = []
+        products_with_errors = []
+        all_products = Product.objects.filter(is_active=True)
 
-            all_products = Product.objects.filter(is_active=True)
+        for product in all_products:
+            try:
+                image_urls = get_image_search_results(
+                    product,
+                    num_results=num_results,
+                    img_size=img_size,
+                    img_type=img_type,
+                    img_color_type=img_color_type,
+                    file_type=file_type,
+                    safe_search=safe_search
+                )
+                if image_urls:
+                    products_with_images.append({
+                        'product': product,
+                        'image_urls': image_urls
+                    })
+            except Exception as e:
+                error_message = f"Error processing product {product.name} (ID: {product.id}): {e}"
+                print(error_message)
+                products_with_errors.append({'name': product.name, 'id': product.id, 'error': str(e)})
 
-            for product in all_products:
-                try:
-                    images_added_for_product = process_product_image_search(
-                        product,
-                        num_results=num_results,
-                        img_size=img_size,
-                        img_type=img_type,
-                        img_color_type=img_color_type,
-                        file_type=file_type,
-                        safe_search=safe_search
-                    )
-                    if images_added_for_product > 0:
-                        total_images_added += images_added_for_product
-                    products_processed_count += 1
-                except Exception as e:
-                    error_message = f"Error processing product {product.name} (ID: {product.id}): {e}"
-                    print(error_message)
-                    products_with_errors.append({'name': product.name, 'id': product.id, 'error': str(e)})
-            
-            context.update({
-                'products_processed_count': products_processed_count,
-                'total_images_added': total_images_added,
-                'products_with_errors': products_with_errors,
-                'search_triggered': True # Flag to show results section
-            })
-        else:
-            context['search_triggered'] = False # Form is invalid, show form with errors
-    
-    # For GET request or if form is invalid on POST, just render the form page
-    # The template name will be 'store/auto_image_search_form.html'
+        context.update({
+            'products_with_images': products_with_images,
+            'products_with_errors': products_with_errors,
+            'search_triggered': True
+        })
+        return render(request, 'store/auto_search_results.html', context)
+
     return render(request, 'store/auto_image_search_form.html', context)
+
+@login_required
+def save_selected_images_view(request):
+    if request.method == 'POST':
+        selected_images = request.POST.getlist('selected_images')
+        product_id_next = request.POST.get('next_product_id')
+
+        for item in selected_images:
+            product_id, image_url = item.split(',', 1)
+            product = get_object_or_404(Product, id=product_id)
+            is_main = f'is_main_{product_id}' in request.POST and request.POST[f'is_main_{product_id}'] == image_url
+            save_image_for_product(product, image_url, is_main=is_main)
+
+        if product_id_next:
+            return redirect('store:one_by_one_image_search', product_id=product_id_next)
+        else:
+            return redirect('store:one_by_one_product_list')
+
+    return redirect('store:auto_search_product_images')
+
+
+# --- One by One Image Search Views ---
+
+@login_required
+def one_by_one_product_list(request):
+    products = Product.objects.filter(is_active=True).order_by('name')
+    return render(request, 'store/one_by_one_product_list.html', {'products': products})
+
+@login_required
+def one_by_one_image_search(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+    form = ImageSearchSettingsForm(request.POST or None)
+    context = {'product': product, 'form': form}
+
+    if request.method == 'POST' and form.is_valid():
+        num_results = form.cleaned_data['num_results']
+        img_size = form.cleaned_data['img_size']
+        img_type = form.cleaned_data['img_type']
+        img_color_type = form.cleaned_data['img_color_type']
+        file_type = form.cleaned_data['file_type']
+        safe_search = form.cleaned_data['safe_search']
+
+        image_urls = get_image_search_results(
+            product,
+            num_results=num_results,
+            img_size=img_size,
+            img_type=img_type,
+            img_color_type=img_color_type,
+            file_type=file_type,
+            safe_search=safe_search
+        )
+        context['image_urls'] = image_urls
+        context['search_triggered'] = True
+
+        # For the "Save and Next" button
+        next_product = Product.objects.filter(is_active=True, name__gt=product.name).order_by('name').first()
+        if next_product:
+            context['next_product_id'] = next_product.id
+
+    return render(request, 'store/one_by_one_image_search.html', context)
 
 from django.urls import reverse
 

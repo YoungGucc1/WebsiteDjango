@@ -1,0 +1,72 @@
+{% extends 'store/base.html' %}
+{% load bootstrap5 %}
+
+{% block title %}
+Image Search for {{ product.name }}
+{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Image Search for: {{ product.name }}</h2>
+
+    <div class="card mb-4">
+        <div class="card-header">Search Settings</div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+                {% bootstrap_form form layout='horizontal' %}
+                <button type="submit" class="btn btn-primary mt-3">Search for Images</button>
+            </form>
+        </div>
+    </div>
+
+    {% if search_triggered %}
+    <hr>
+    <h3>Search Results</h3>
+    <form action="{% url 'store:save_selected_images' %}" method="post">
+        {% csrf_token %}
+        {% if next_product_id %}
+        <input type="hidden" name="next_product_id" value="{{ next_product_id }}">
+        {% endif %}
+
+        <div class="d-grid gap-2 d-md-flex justify-content-md-between mb-4">
+            <div>
+                <button type="submit" class="btn btn-success">Save Selections</button>
+                {% if next_product_id %}
+                <button type="submit" class="btn btn-info">Save and Go to Next Product</button>
+                {% endif %}
+            </div>
+            <a href="{% url 'store:one_by_one_product_list' %}" class="btn btn-secondary">Back to Product List</a>
+        </div>
+
+        <div class="row">
+            {% for image_url in image_urls %}
+            <div class="col-md-3 mb-4">
+                <div class="card h-100">
+                    <img src="{{ image_url }}" class="card-img-top" alt="Image for {{ product.name }}">
+                    <div class="card-body">
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="selected_images" value="{{ product.id }},{{ image_url }}" id="image_{{ forloop.counter }}">
+                            <label class="form-check-label" for="image_{{ forloop.counter }}">
+                                Select this image
+                            </label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="is_main_{{ product.id }}" value="{{ image_url }}" id="main_image_{{ forloop.counter }}">
+                            <label class="form-check-label" for="main_image_{{ forloop.counter }}">
+                                Set as main
+                            </label>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            {% empty %}
+            <div class="col">
+                <p>No images found for this product with the specified criteria.</p>
+            </div>
+            {% endfor %}
+        </div>
+    </form>
+    {% endif %}
+</div>
+{% endblock %}

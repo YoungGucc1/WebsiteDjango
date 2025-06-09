@@ -29,41 +29,6 @@
         </div>
     </div>
 
-    {% if search_triggered %}
-        <div class="mt-4">
-            <h2>Search Results</h2>
-            <hr>
-            <div class="alert alert-info" role="alert">
-                <h4 class="alert-heading">Processing Summary</h4>
-                <p><strong>Products Processed:</strong> {{ products_processed_count }}</p>
-                <p><strong>Total New Images Added:</strong> {{ total_images_added }}</p>
-            </div>
-
-            {% if products_with_errors %}
-                <div class="alert alert-danger mt-4" role="alert">
-                    <h4 class="alert-heading">Errors Encountered</h4>
-                    <p>The following products encountered errors during image processing:</p>
-                    <ul>
-                        {% for item in products_with_errors %}
-                            <li>
-                                <strong>{{ item.name }} (ID: {{ item.id }})</strong>: {{ item.error }}
-                            </li>
-                        {% endfor %}
-                    </ul>
-                </div>
-            {% else %}
-                {% if products_processed_count > 0 %}
-                    <div class="alert alert-success mt-4" role="alert">
-                        <p>All processed products were handled successfully according to the specified criteria.</p>
-                    </div>
-                {% elif products_processed_count == 0 and total_images_added == 0 %}
-                     <div class="alert alert-warning mt-4" role="alert">
-                        <p>No products were processed, or no new images were added. This might be because all products already have the desired number of images, there are no active products to process, or no images matched your criteria.</p>
-                    </div>
-                {% endif %}
-            {% endif %}
-        </div>
-    {% endif %}
 
     <div class="mt-4 mb-5">
         <a href="{% url 'store:home' %}" class="btn btn-secondary">Back to Home</a>

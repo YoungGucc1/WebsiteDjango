@@ -15,11 +15,11 @@ DEFAULT_IMG_COLOR_TYPE = "any"
 DEFAULT_FILE_TYPE = "jpg"
 DEFAULT_SAFE_SEARCH = "active"
 
-def search_google_images(query, num_results=5, 
-                         img_size=DEFAULT_IMG_SIZE, 
-                         img_type=DEFAULT_IMG_TYPE, 
-                         img_color_type=DEFAULT_IMG_COLOR_TYPE, 
-                         file_type=DEFAULT_FILE_TYPE, 
+def search_google_images(query, num_results=5,
+                         img_size=DEFAULT_IMG_SIZE,
+                         img_type=DEFAULT_IMG_TYPE,
+                         img_color_type=DEFAULT_IMG_COLOR_TYPE,
+                         file_type=DEFAULT_FILE_TYPE,
                          safe_search=DEFAULT_SAFE_SEARCH):
     """
     Searches Google Images for a given query and returns a list of image URLs.
@@ -63,7 +63,7 @@ def search_google_images(query, num_results=5,
         print(f"An unexpected error occurred while searching images for '{query}': {e}")
         return []
 
-def save_image_for_product(product: Product, image_url: str, image_index: int):
+def save_image_for_product(product: Product, image_url: str, is_main=False):
     """
     Downloads an image from a URL, saves it as a StoreImage object,
     and associates it with the given product.
@@ -91,17 +91,17 @@ def save_image_for_product(product: Product, image_url: str, image_index: int):
         # Generate a filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         safe_product_name = slugify(product.name)
+        image_index = product.images.count()
         filename = f"{safe_product_name}_{image_index + 1}_{timestamp}{original_extension}"
 
         img_content = ContentFile(response.content, name=filename)
-        
+
         # Create and save the image instance
         store_image = StoreImage(
             name=f"{product.name} Image {image_index + 1}",
             alt_text=f"Image for {product.name}",
             type=StoreImage.ImageType.PRODUCT,
-            # is_main can be set based on logic (e.g., first image is main)
-            is_main=(image_index == 0 and not product.images.filter(is_main=True).exists()) 
+            is_main=is_main
         )
         store_image.file_path.save(filename, img_content, save=True) # save=True will trigger model's save method
 
@@ -118,53 +118,28 @@ def save_image_for_product(product: Product, image_url: str, image_index: int):
         print(f"Error saving image for {product.name} from {image_url}: {e}")
     return None
 
-def process_product_image_search(product: Product, 
-                                 num_results=3, 
-                                 img_size=DEFAULT_IMG_SIZE, 
-                                 img_type=DEFAULT_IMG_TYPE, 
-                                 img_color_type=DEFAULT_IMG_COLOR_TYPE, 
-                                 file_type=DEFAULT_FILE_TYPE, 
+def get_image_search_results(product: Product,
+                                 num_results=5,
+                                 img_size=DEFAULT_IMG_SIZE,
+                                 img_type=DEFAULT_IMG_TYPE,
+                                 img_color_type=DEFAULT_IMG_COLOR_TYPE,
+                                 file_type=DEFAULT_FILE_TYPE,
                                  safe_search=DEFAULT_SAFE_SEARCH):
     """
-    Searches for images for a single product using specified parameters and saves them.
-    Returns the number of images successfully saved.
+    Searches for images for a single product and returns the URLs.
     """
-    print(f"Processing product: {product.name} (ID: {product.id}) with search params: "
-          f"num_results={num_results}, img_size={img_size}, img_type={img_type}, "
-          f"img_color_type={img_color_type}, file_type={file_type}, safe_search={safe_search}")
-    
-    current_image_count = product.images.count()
-    if current_image_count >= num_results:
-        print(f"Product '{product.name}' already has {current_image_count} images (target: {num_results}). Skipping.")
-        return 0
-
-    # Use product name as the primary query. Could be extended with category, etc.
     query = product.name
     if product.category:
         query = f"{product.name} {product.category.name}"
 
     image_urls = search_google_images(
         query,
-        num_results=num_results - current_image_count, # Only fetch remaining needed
+        num_results=num_results,
         img_size=img_size,
         img_type=img_type,
         img_color_type=img_color_type,
         file_type=file_type,
         safe_search=safe_search
     )
-    
-    if not image_urls:
-        print(f"No new image URLs found for product '{product.name}' with query '{query}'.")
-        return 0
 
-    saved_count = 0
-    # Start image_index from current_image_count to avoid overwriting is_main logic if adding to existing
-    for i, url in enumerate(image_urls, start=current_image_count): 
-        if product.images.count() >= num_results: # Stop if we've reached the desired count
-            break
-        # Pass current total images count as index for naming and main image logic
-        if save_image_for_product(product, url, product.images.count()): 
-            saved_count += 1
-            
-    print(f"Finished processing for product '{product.name}'. Saved {saved_count} new images.")
-    return saved_count
+    return image_urls
