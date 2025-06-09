@@ -20,11 +20,10 @@ wheels/
 .installed.cfg
 *.egg
 MANIFEST
-images/
-
 # Django
 *.log
 local_settings.py
+media/
 
 
 # Virtual Environment
