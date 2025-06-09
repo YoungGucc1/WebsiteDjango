@@ -1,39 +1,55 @@
 {% extends 'store/base.html' %}
 
 {% block content %}
-<h2 class="mb-4">Categories</h2>
-<div class="tile-grid mb-5">
-    {% for category in categories %}
-    <a href="{% url 'store:product_list_by_category' category.slug %}" class="tile" style="background-image: url('{% if category.image %}{{ category.image.file_path.url }}{% else %}https://via.placeholder.com/400{% endif %}');">
-        <div class="tile-label">{{ category.name }}</div>
-    </a>
-    {% empty %}
-    <div class="col-12">
-        <p>No categories available yet.</p>
-    </div>
-    {% endfor %}
+<h2 class="mb-4" id="products-heading">Products</h2>
+<div id="product-list-container">
+    {% include 'store/product_list_partial.html' %}
 </div>
+{% endblock %}
 
-<h2 class="mb-4">Featured Products</h2>
-<div class="tile-grid">
-    {% for product in products %}
-    <a href="{% url 'store:product_detail' product.slug %}" 
-       class="tile product-tile" 
-       style="background-image: url('{% if product.display_image %}{{ product.display_image.file_path.url }}{% else %}https://via.placeholder.com/400{% endif %}');"
-       data-name="{{ product.name }}"
-       data-description="{{ product.short_description|default:product.description|truncatewords:30 }}"
-       data-price="{% if product.display_price %}{{ product.display_price.amount }} {{ product.display_price.currency }}{% endif %}">
-        <div class="tile-label">
-            <span>{{ product.name }}</span>
-            {% if product.display_price %}
-            <span class="float-end">{{ product.display_price.amount }} {{ product.display_price.currency }}</span>
-            {% endif %}
-        </div>
-    </a>
-    {% empty %}
-    <div class="col-12">
-        <p>No featured products available yet.</p>
-    </div>
-    {% endfor %}
-</div>
+{% block extra_js %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const offcanvasCategories = document.getElementById('offcanvasCategories');
+        const productListContainer = document.getElementById('product-list-container');
+        const productsHeading = document.getElementById('products-heading');
+
+        if (offcanvasCategories && productListContainer) {
+            offcanvasCategories.addEventListener('click', function(event) {
+                const target = event.target;
+                // Check if a category link was clicked
+                if (target.tagName === 'A' && target.closest('.list-group-item')) {
+                    event.preventDefault(); // Prevent default link navigation
+
+                    const categorySlug = target.getAttribute('href').split('/').filter(Boolean).pop();
+                    let fetchUrl = "{% url 'store:ajax_product_list' %}";
+                    if (categorySlug && categorySlug !== 'all') { // Assuming 'all' or empty slug for all products
+                        fetchUrl = "{% url 'store:ajax_product_list_by_category' category_slug='DUMMY' %}".replace('DUMMY', categorySlug);
+                    }
+
+                    fetch(fetchUrl)
+                        .then(response => response.text())
+                        .then(html => {
+                            productListContainer.innerHTML = html;
+                            // Update heading based on selected category
+                            if (categorySlug && categorySlug !== 'all') {
+                                productsHeading.textContent = `Products in ${target.textContent.trim()}`;
+                            } else {
+                                productsHeading.textContent = 'All Products';
+                            }
+                            // Close the offcanvas
+                            const offcanvas = bootstrap.Offcanvas.getInstance(offcanvasCategories);
+                            if (offcanvas) {
+                                offcanvas.hide();
+                            }
+                        })
+                        .catch(error => {
+                            console.error('Error fetching products:', error);
+                            productListContainer.innerHTML = '<p>Error loading products. Please try again.</p>';
+                        });
+                }
+            });
+        }
+    });
+</script>
 {% endblock %}

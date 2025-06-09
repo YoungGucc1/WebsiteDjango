@@ -14,10 +14,10 @@ import io
 
 # Basic Views
 def home(request):
-    products = Product.objects.filter(is_active=True, is_featured=True).prefetch_related(
+    products = Product.objects.filter(is_active=True).prefetch_related(
         Prefetch('images', queryset=Image.objects.filter(is_main=True), to_attr='main_product_image'),
         Prefetch('prices', queryset=Price.objects.filter(is_active=True, price_type=Price.PriceType.SELLING).order_by('amount'), to_attr='selling_prices')
-    )[:10] # Limit to 10 featured products for the homepage
+    )
 
     # Efficiently get the main image and lowest selling price
     for product in products:
@@ -534,3 +534,21 @@ def metro_home_view(request):
         'store_name': getattr(settings, 'STORE_NAME', 'Metro Store') # Example: get store name from settings
     }
     return render(request, 'store/metro_home.html', context)
+
+def ajax_product_list(request, category_slug=None):
+    products_query = Product.objects.filter(is_active=True).prefetch_related(
+        Prefetch('images', queryset=Image.objects.filter(is_main=True), to_attr='main_product_image'),
+        Prefetch('prices', queryset=Price.objects.filter(is_active=True, price_type=Price.PriceType.SELLING).order_by('amount'), to_attr='selling_prices')
+    )
+
+    if category_slug:
+        category = get_object_or_404(Category, slug=category_slug)
+        products_query = products_query.filter(category=category)
+    
+    products = list(products_query)
+
+    for product in products:
+        product.display_image = product.main_product_image[0] if product.main_product_image else (product.images.first() if product.images.exists() else None)
+        product.display_price = product.selling_prices[0] if product.selling_prices else None
+        
+    return render(request, 'store/product_list_partial.html', {'products': products})

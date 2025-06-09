@@ -27,4 +27,6 @@ urlpatterns = [
     # Worker Product Audit URLs
     path('worker/products/', views.worker_product_list, name='worker_product_list'),
     path('worker/product/<uuid:product_id>/audit/', views.worker_product_audit_view, name='worker_product_audit'),
+    path('ajax/products/', views.ajax_product_list, name='ajax_product_list'),
+    path('ajax/products/<slug:category_slug>/', views.ajax_product_list, name='ajax_product_list_by_category'),
 ]

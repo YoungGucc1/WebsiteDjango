@@ -1,0 +1,21 @@
+<div class="tile-grid">
+    {% for product in products %}
+    <a href="{% url 'store:product_detail' product.slug %}" 
+       class="tile product-tile" 
+       style="background-image: url('{% if product.display_image %}{{ product.display_image.file_path.url }}{% else %}https://via.placeholder.com/400{% endif %}');"
+       data-name="{{ product.name }}"
+       data-description="{{ product.short_description|default:product.description|truncatewords:30 }}"
+       data-price="{% if product.display_price %}{{ product.display_price.amount }} {{ product.display_price.currency }}{% endif %}">
+        <div class="tile-label">
+            <span>{{ product.name }}</span>
+            {% if product.display_price %}
+            <span class="float-end">{{ product.display_price.amount }} {{ product.display_price.currency }}</span>
+            {% endif %}
+        </div>
+    </a>
+    {% empty %}
+    <div class="col-12">
+        <p>No products available yet.</p>
+    </div>
+    {% endfor %}
+</div>
