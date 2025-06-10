@@ -2,8 +2,9 @@ from django.shortcuts import render, get_object_or_404, redirect
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.db.models import Prefetch
+from django.utils.text import slugify # Added this import
 from .models import Product, Category, Tag, Image, Price, Warehouse, Stock, Counterparty, WorkerProductAudit
-from .forms import ProductForm, ImageForm, CategoryForm, TagForm, PriceForm, WarehouseForm, StockForm, CounterpartyForm, WorkerProductAuditForm
+from .forms import ProductForm, ImageForm, CategoryForm, TagForm, PriceForm, WarehouseForm, StockForm, CounterpartyForm, WorkerProductAuditForm, ExcelUploadForm
 from django.http import HttpResponse
 from openpyxl import load_workbook
 from decimal import Decimal
@@ -134,224 +135,229 @@ def worker_product_audit_view(request, product_id):
 @login_required # Ensure only logged-in users can access
 def import_products_from_excel(request):
     if request.method == 'POST':
-        excel_file = request.FILES.get('excel_file')
-        if not excel_file:
-            return HttpResponse("No file uploaded.", status=400)
-        if not excel_file.name.endswith(('.xlsx', '.xls')):
-            return HttpResponse("Invalid file format. Please upload an Excel file.", status=400)
+        form = ExcelUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            excel_file = form.cleaned_data['excel_file']
+            if not excel_file.name.endswith(('.xlsx', '.xls')):
+                return HttpResponse("Invalid file format. Please upload an Excel file.", status=400)
 
-        try:
-            workbook = load_workbook(excel_file)
-            sheet = workbook.active # Assumes data is in the first sheet
+            try:
+                workbook = load_workbook(excel_file)
+                sheet = workbook.active # Assumes data is in the first sheet
 
-            # --- Header Mapping (Adjust based on your Excel file) ---
-            # Example: {'Excel Column Name': 'model_field_name'}
-            header_map = {
-                'Наименование': 'name',
-                'Наименование (доп)': 'name_2',
-                'Артикул': 'article_number',
-                'Описание': 'description',
-                'Краткое описание': 'short_description',
-                'Категория': 'category_name', # Will be used to find/create Category object
-                'Теги': 'tags_str',           # Comma-separated string of tags
-                'Цена продажи': 'selling_price',
-                'Валюта продажи': 'selling_currency',
-                'Цена закупки': 'purchase_price',
-                'Валюта закупки': 'purchase_currency',
-                'Количество на складе': 'stock_quantity',
-                'Склад': 'warehouse_name',
-                'Изображение (путь или URL)': 'image_path_or_url', # Handle local path or URL
-                'Главное изображение': 'is_main_image', # 'Да' or 'Нет'
-                'Активен': 'is_active_str', # 'Да' or 'Нет'
-                'В избранном': 'is_featured_str', # 'Да' or 'Нет'
-            }
-            
-            headers = [cell.value for cell in sheet[1]] # Get headers from the first row
-            
-            # Validate required headers
-            required_excel_headers = ['Наименование', 'Категория', 'Цена продажи'] # Example
-            for req_header in required_excel_headers:
-                if req_header not in headers:
-                    return HttpResponse(f"Missing required Excel column: {req_header}", status=400)
-
-            products_created_count = 0
-            products_updated_count = 0
-            errors = []
-
-            for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
-                if not any(row): # Skip empty rows
-                    continue
-
-                product_data = {}
-                for col_idx, cell_value in enumerate(row):
-                    header_name = headers[col_idx]
-                    model_field = header_map.get(header_name)
-                    if model_field:
-                        product_data[model_field] = cell_value
+                # --- Header Mapping (Adjust based on your Excel file) ---
+                # Example: {'Excel Column Name': 'model_field_name'}
+                header_map = {
+                    'Наименование': 'name',
+                    'Наименование (доп)': 'name_2',
+                    'Артикул': 'article_number',
+                    'Описание': 'description',
+                    'Краткое описание': 'short_description',
+                    'Категория': 'category_name', # Will be used to find/create Category object
+                    'Теги': 'tags_str',           # Comma-separated string of tags
+                    'Цена': 'selling_price',
+                    'Валюта продажи': 'selling_currency',
+                    'Закуп': 'purchase_price',
+                    'Валюта закупки': 'purchase_currency',
+                    'Остаток': 'stock_quantity',
+                    'Склад': 'warehouse_name',
+                    'Изображение (путь или URL)': 'image_path_or_url', # Handle local path or URL
+                    'Главное изображение': 'is_main_image', # 'Да' or 'Нет'
+                    'Активен': 'is_active_str', # 'Да' or 'Нет'
+                    'В избранном': 'is_featured_str', # 'Да' or 'Нет'
+                }
                 
-                if not product_data.get('name'):
-                    errors.append(f"Row {row_idx}: Product name is missing. Skipping.")
-                    continue
+                headers = [cell.value for cell in sheet[1]] # Get headers from the first row
+                
+                # Validate required headers
+                required_excel_headers = ['Наименование', 'Категория', 'Цена'] # Example
+                for req_header in required_excel_headers:
+                    if req_header not in headers:
+                        return HttpResponse(f"Missing required Excel column: {req_header}", status=400)
 
-                try:
-                    # --- Handle Category ---
-                    category_name = product_data.pop('category_name', None)
-                    if not category_name:
-                        errors.append(f"Row {row_idx} (Product: {product_data.get('name')}): Category name is missing. Skipping.")
+                products_created_count = 0
+                products_updated_count = 0
+                errors = []
+
+                for row_idx, row in enumerate(sheet.iter_rows(min_row=2, values_only=True), start=2):
+                    if not any(row): # Skip empty rows
                         continue
-                    category, _ = Category.objects.get_or_create(name=category_name, defaults={'slug': slugify(category_name)})
 
-                    # --- Handle Tags ---
-                    tags_str = product_data.pop('tags_str', '')
-                    tag_instances = []
-                    if tags_str:
-                        tag_names = [name.strip() for name in tags_str.split(',') if name.strip()]
-                        for tag_name in tag_names:
-                            tag, _ = Tag.objects.get_or_create(name=tag_name, defaults={'slug': slugify(tag_name)})
-                            tag_instances.append(tag)
+                    product_data = {}
+                    for col_idx, cell_value in enumerate(row):
+                        header_name = headers[col_idx]
+                        model_field = header_map.get(header_name)
+                        if model_field:
+                            product_data[model_field] = cell_value
                     
-                    # --- Handle Prices ---
-                    selling_price_val = product_data.pop('selling_price', None)
-                    selling_currency_str = product_data.pop('selling_currency', 'KZT') # Default currency
-                    purchase_price_val = product_data.pop('purchase_price', None)
-                    purchase_currency_str = product_data.pop('purchase_currency', 'KZT')
-
-                    # --- Handle Stock ---
-                    stock_quantity_val = product_data.pop('stock_quantity', 0)
-                    warehouse_name_str = product_data.pop('warehouse_name', 'Основной склад') # Default warehouse
-                    warehouse, _ = Warehouse.objects.get_or_create(name=warehouse_name_str, defaults={'slug': slugify(warehouse_name_str)})
-
-                    # --- Handle Boolean Fields ---
-                    is_active = str(product_data.pop('is_active_str', 'Да')).lower() in ['да', 'yes', 'true', '1']
-                    is_featured = str(product_data.pop('is_featured_str', 'Нет')).lower() in ['да', 'yes', 'true', '1']
-
-                    # --- Prepare Product Fields ---
-                    # Remove price/stock related fields that are not direct Product model fields
-                    product_fields = {k: v for k, v in product_data.items() if hasattr(Product, k) and k not in ['image_path_or_url', 'is_main_image']}
-                    product_fields['category'] = category
-                    product_fields['is_active'] = is_active
-                    product_fields['is_featured'] = is_featured
-                    
-                    # --- Create or Update Product ---
-                    # Use article_number as a unique identifier if available, otherwise name
-                    identifier_field = 'article_number' if product_fields.get('article_number') else 'name'
-                    identifier_value = product_fields.get(identifier_field)
-
-                    if identifier_field == 'name' and not identifier_value: # Should have been caught earlier
-                        errors.append(f"Row {row_idx}: Product name is missing after processing. Skipping.")
+                    if not product_data.get('name'):
+                        errors.append(f"Row {row_idx}: Product name is missing. Skipping.")
                         continue
-                    
-                    product_instance = None
-                    if identifier_value:
-                        try:
-                            if identifier_field == 'article_number':
-                                product_instance = Product.objects.get(article_number=identifier_value)
-                            else: # name
-                                product_instance = Product.objects.get(name=identifier_value, category=category) # Name might not be unique across categories
-                            
-                            # Update existing product
-                            for key, value in product_fields.items():
-                                setattr(product_instance, key, value)
-                            product_instance.save()
-                            products_updated_count += 1
-                        except Product.DoesNotExist:
-                            pass # Will create new below
 
-                    if not product_instance:
-                        product_instance = Product.objects.create(**product_fields)
-                        products_created_count += 1
-                    
-                    # --- Set Tags (after product is saved) ---
-                    if tag_instances:
-                        product_instance.tags.set(tag_instances)
+                    try:
+                        # --- Handle Category ---
+                        category_name = product_data.pop('category_name', None)
+                        if not category_name:
+                            errors.append(f"Row {row_idx} (Product: {product_data.get('name')}): Category name is missing. Skipping.")
+                            continue
+                        category, _ = Category.objects.get_or_create(name=category_name, defaults={'slug': slugify(category_name)})
 
-                    # --- Handle Prices (after product is saved) ---
-                    if selling_price_val is not None:
-                        try:
-                            selling_price_decimal = Decimal(str(selling_price_val))
-                            Price.objects.update_or_create(
-                                product=product_instance,
-                                price_type=Price.PriceType.SELLING,
-                                currency=selling_currency_str.upper(),
-                                defaults={'amount': selling_price_decimal, 'is_active': True}
-                            )
-                        except ValueError:
-                            errors.append(f"Row {row_idx} (Product: {product_instance.name}): Invalid selling price format '{selling_price_val}'.")
-                    
-                    if purchase_price_val is not None:
-                        try:
-                            purchase_price_decimal = Decimal(str(purchase_price_val))
-                            Price.objects.update_or_create(
-                                product=product_instance,
-                                price_type=Price.PriceType.PURCHASE,
-                                currency=purchase_currency_str.upper(),
-                                defaults={'amount': purchase_price_decimal, 'is_active': True}
-                            )
-                        except ValueError:
-                            errors.append(f"Row {row_idx} (Product: {product_instance.name}): Invalid purchase price format '{purchase_price_val}'.")
+                        # --- Handle Tags ---
+                        tags_str = product_data.pop('tags_str', '')
+                        tag_instances = []
+                        if tags_str:
+                            tag_names = [name.strip() for name in tags_str.split(',') if name.strip()]
+                            for tag_name in tag_names:
+                                tag, _ = Tag.objects.get_or_create(name=tag_name, defaults={'slug': slugify(tag_name)})
+                                tag_instances.append(tag)
+                        
+                        # --- Handle Prices ---
+                        selling_price_val = product_data.pop('selling_price', None)
+                        selling_currency_str = product_data.pop('selling_currency', 'KZT') # Default currency
+                        purchase_price_val = product_data.pop('purchase_price', None)
+                        purchase_currency_str = product_data.pop('purchase_currency', 'KZT')
 
-                    # --- Handle Stock (after product is saved) ---
-                    if stock_quantity_val is not None:
-                        try:
-                            stock_quantity_int = int(stock_quantity_val)
-                            Stock.objects.update_or_create(
-                                product=product_instance,
-                                warehouse=warehouse,
-                                defaults={'quantity': stock_quantity_int}
-                            )
-                        except ValueError:
-                             errors.append(f"Row {row_idx} (Product: {product_instance.name}): Invalid stock quantity format '{stock_quantity_val}'.")
+                        # --- Handle Stock ---
+                        stock_quantity_val = product_data.pop('stock_quantity', 0)
+                        warehouse_name_str = product_data.pop('warehouse_name', 'Основной склад') # Default warehouse
+                        warehouse, _ = Warehouse.objects.get_or_create(name=warehouse_name_str, defaults={'slug': slugify(warehouse_name_str)})
 
+                        # --- Handle Boolean Fields ---
+                        is_active = str(product_data.pop('is_active_str', 'Да')).lower() in ['да', 'yes', 'true', '1']
+                        is_featured = str(product_data.pop('is_featured_str', 'Нет')).lower() in ['да', 'yes', 'true', '1']
 
-                    # --- Handle Image ---
-                    image_path_or_url = product_data.get('image_path_or_url')
-                    is_main_image_str = str(product_data.get('is_main_image', 'Нет')).lower()
-                    is_main = is_main_image_str in ['да', 'yes', 'true', '1']
+                        # --- Prepare Product Fields ---
+                        # Remove price/stock related fields that are not direct Product model fields
+                        product_fields = {k: v for k, v in product_data.items() if hasattr(Product, k) and k not in ['image_path_or_url', 'is_main_image']}
+                        product_fields['category'] = category
+                        product_fields['is_active'] = is_active
+                        product_fields['is_featured'] = is_featured
+                        
+                        # --- Create or Update Product ---
+                        # Use article_number as a unique identifier if available, otherwise name
+                        identifier_field = 'article_number' if product_fields.get('article_number') else 'name'
+                        identifier_value = product_fields.get(identifier_field)
 
-                    if image_path_or_url:
-                        try:
-                            img_name_default = f"{slugify(product_instance.name)}_{product_instance.id.hex[:8]}"
-                            
-                            # Check if it's a local file path
-                            # This is a basic check; more robust path validation might be needed
-                            if os.path.exists(image_path_or_url) and os.path.isfile(image_path_or_url):
-                                with open(image_path_or_url, 'rb') as f:
-                                    # Create an InMemoryUploadedFile for Django's ImageField
-                                    img_file = InMemoryUploadedFile(
-                                        file=io.BytesIO(f.read()),
-                                        field_name='file_path',
-                                        name=os.path.basename(image_path_or_url),
-                                        content_type='image/jpeg', # Adjust content type if needed
-                                        size=os.path.getsize(image_path_or_url),
-                                        charset=None
-                                    )
-                                image_instance = Image.objects.create(
-                                    name=img_name_default,
-                                    file_path=img_file,
-                                    type=Image.ImageType.PRODUCT,
-                                    is_main=is_main 
+                        if identifier_field == 'name' and not identifier_value: # Should have been caught earlier
+                            errors.append(f"Row {row_idx}: Product name is missing after processing. Skipping.")
+                            continue
+                        
+                        product_instance = None
+                        if identifier_value:
+                            try:
+                                if identifier_field == 'article_number':
+                                    product_instance = Product.objects.get(article_number=identifier_value)
+                                else: # name
+                                    product_instance = Product.objects.get(name=identifier_value, category=category) # Name might not be unique across categories
+                                
+                                # Update existing product
+                                for key, value in product_fields.items():
+                                    setattr(product_instance, key, value)
+                                product_instance.save()
+                                products_updated_count += 1
+                            except Product.DoesNotExist:
+                                pass # Will create new below
+
+                        if not product_instance:
+                            product_instance = Product.objects.create(**product_fields)
+                            products_created_count += 1
+                        
+                        # --- Set Tags (after product is saved) ---
+                        if tag_instances:
+                            product_instance.tags.set(tag_instances)
+
+                        # --- Handle Prices (after product is saved) ---
+                        if selling_price_val is not None:
+                            try:
+                                selling_price_decimal = Decimal(str(selling_price_val))
+                                Price.objects.update_or_create(
+                                    product=product_instance,
+                                    price_type=Price.PriceType.SELLING,
+                                    currency=selling_currency_str.upper(),
+                                    defaults={'amount': selling_price_decimal, 'is_active': True}
                                 )
-                                product_instance.images.add(image_instance)
-                            # TODO: Add handling for image URLs (download and save)
-                            # else: (handle URL)
-                            #    errors.append(f"Row {row_idx} (Product: {product_instance.name}): Image path '{image_path_or_url}' not found or not a file. URL import not yet implemented.")
-                        except Exception as e:
-                            errors.append(f"Row {row_idx} (Product: {product_instance.name}): Error processing image '{image_path_or_url}': {e}")
-                
-                except Exception as e:
-                    errors.append(f"Row {row_idx} (Product: {product_data.get('name', 'Unknown')}): General error - {e}")
-            
-            # --- Prepare Summary ---
-            summary_message = f"Import completed. Products created: {products_created_count}, Products updated: {products_updated_count}."
-            if errors:
-                summary_message += "\nErrors encountered:\n" + "\n".join(errors)
-            
-            return HttpResponse(summary_message, content_type="text/plain")
+                            except ValueError:
+                                errors.append(f"Row {row_idx} (Product: {product_instance.name}): Invalid selling price format '{selling_price_val}'.")
+                        
+                        if purchase_price_val is not None:
+                            try:
+                                purchase_price_decimal = Decimal(str(purchase_price_val))
+                                Price.objects.update_or_create(
+                                    product=product_instance,
+                                    price_type=Price.PriceType.PURCHASE,
+                                    currency=purchase_currency_str.upper(),
+                                    defaults={'amount': purchase_price_decimal, 'is_active': True}
+                                )
+                            except ValueError:
+                                errors.append(f"Row {row_idx} (Product: {product_instance.name}): Invalid purchase price format '{purchase_price_val}'.")
 
-        except Exception as e:
-            return HttpResponse(f"An error occurred during processing: {e}", status=500)
+                        # --- Handle Stock (after product is saved) ---
+                        if stock_quantity_val is not None:
+                            try:
+                                stock_quantity_int = int(stock_quantity_val)
+                                Stock.objects.update_or_create(
+                                    product=product_instance,
+                                    warehouse=warehouse,
+                                    defaults={'quantity': stock_quantity_int}
+                                )
+                            except ValueError:
+                                 errors.append(f"Row {row_idx} (Product: {product_instance.name}): Invalid stock quantity format '{stock_quantity_val}'.")
+
+
+                        # --- Handle Image ---
+                        image_path_or_url = product_data.get('image_path_or_url')
+                        is_main_image_str = str(product_data.get('is_main_image', 'Нет')).lower()
+                        is_main = is_main_image_str in ['да', 'yes', 'true', '1']
+
+                        if image_path_or_url:
+                            try:
+                                img_name_default = f"{slugify(product_instance.name)}_{product_instance.id.hex[:8]}"
+                                
+                                # Check if it's a local file path
+                                # This is a basic check; more robust path validation might be needed
+                                if os.path.exists(image_path_or_url) and os.path.isfile(image_path_or_url):
+                                    with open(image_path_or_url, 'rb') as f:
+                                        # Create an InMemoryUploadedFile for Django's ImageField
+                                        img_file = InMemoryUploadedFile(
+                                            file=io.BytesIO(f.read()),
+                                            field_name='file_path',
+                                            name=os.path.basename(image_path_or_url),
+                                            content_type='image/jpeg', # Adjust content type if needed
+                                            size=os.path.getsize(image_path_or_url),
+                                            charset=None
+                                        )
+                                    image_instance = Image.objects.create(
+                                        name=img_name_default,
+                                        file_path=img_file,
+                                        type=Image.ImageType.PRODUCT,
+                                        is_main=is_main 
+                                    )
+                                    product_instance.images.add(image_instance)
+                                # TODO: Add handling for image URLs (download and save)
+                                # else: (handle URL)
+                                #    errors.append(f"Row {row_idx} (Product: {product_instance.name}): Image path '{image_path_or_url}' not found or not a file. URL import not yet implemented.")
+                            except Exception as e:
+                                errors.append(f"Row {row_idx} (Product: {product_instance.name}): Error processing image '{image_path_or_url}': {e}")
+                    
+                    except Exception as e:
+                        errors.append(f"Row {row_idx} (Product: {product_data.get('name', 'Unknown')}): General error - {e}")
+                
+                # --- Prepare Summary ---
+                summary_message = f"Import completed. Products created: {products_created_count}, Products updated: {products_updated_count}."
+                if errors:
+                    summary_message += "\nErrors encountered:\n" + "\n".join(errors)
+                
+                return HttpResponse(summary_message, content_type="text/plain")
+
+            except Exception as e:
+                return HttpResponse(f"An error occurred during processing: {e}", status=500)
+        else:
+            # If form is not valid on POST, re-render with errors
+            return render(request, 'store/import_products.html', {'form': form})
+    else:
+        form = ExcelUploadForm() # Instantiate a new form for GET requests
     
-    return render(request, 'store/import_products.html')
+    return render(request, 'store/import_products.html', {'form': form})
 
 # --- Auto Image Search View ---
 from .image_search_utils import get_image_search_results, save_image_for_product

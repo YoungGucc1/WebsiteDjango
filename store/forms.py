@@ -98,7 +98,7 @@ class WorkerProductAuditForm(forms.ModelForm):
 # --- Image Search Settings Form ---
 IMG_SIZE_OPTIONS = [
     ("any", "Any Size"), ("huge", "Huge"), ("icon", "Icon"), ("large", "Large"),
-    ("medium", "Medium"), ("small", "Small"), ("xlarge", "XLarge"), ("xxlarge", "XXLarge")
+    ("medium", "Medium"), ("Small", "Small"), ("xlarge", "XLarge"), ("xxlarge", "XXLarge")
 ]
 IMG_TYPE_OPTIONS = [
     ("any", "Any Type"), ("clipart", "Clipart"), ("face", "Face"), ("lineart", "Lineart"),
@@ -160,3 +160,10 @@ class ImageSearchSettingsForm(forms.Form):
             field.widget.attrs.update({'class': 'form-control mb-2'})
             if isinstance(field.widget, forms.Select):
                 field.widget.attrs.update({'class': 'form-select mb-2'})
+
+# New form for Excel upload
+class ExcelUploadForm(forms.Form):
+    excel_file = forms.FileField(
+        label="Select Excel File",
+        help_text="Upload an .xlsx or .xls file for product import."
+    )
