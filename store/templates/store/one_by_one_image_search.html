@@ -9,17 +9,6 @@ Image Search for {{ product.name }}
 <div class="container mt-4">
     <h2>Image Search for: {{ product.name }}</h2>
 
-    <div class="card mb-4">
-        <div class="card-header">Search Settings</div>
-        <div class="card-body">
-            <form method="post">
-                {% csrf_token %}
-                {% bootstrap_form form layout='horizontal' %}
-                <button type="submit" class="btn btn-primary mt-3">Search for Images</button>
-            </form>
-        </div>
-    </div>
-
     {% if search_triggered %}
     <hr>
     <h3>Search Results</h3>
@@ -34,10 +23,38 @@ Image Search for {{ product.name }}
                 <button type="submit" class="btn btn-success">Save Selections</button>
                 {% if next_product_id %}
                 <button type="submit" class="btn btn-info">Save and Go to Next Product</button>
+                <button type="submit" class="btn btn-warning" name="skip_product" value="true">Skip</button> {# Added Skip button #}
                 {% endif %}
             </div>
             <a href="{% url 'store:one_by_one_product_list' %}" class="btn btn-secondary">Back to Product List</a>
         </div>
+
+        {# Manual Image Upload Form #}
+        <!-- <div class="card mb-4">
+            <div class="card-header">Upload Image Manually</div>
+            <div class="card-body">
+                <form action="{% url 'store:upload_product_image' product.id %}" method="post" enctype="multipart/form-data" class="row g-3 align-items-center">
+                    {% csrf_token %}
+                    <div class="col-auto">
+                        <label for="{{ upload_form.image_file.id_for_label }}" class="visually-hidden">{{ upload_form.image_file.label }}</label>
+                        {{ upload_form.image_file }}
+                    </div>
+                    <div class="col-auto">
+                        <button type="submit" class="btn btn-primary">Upload Image</button>
+                    </div>
+                    {% if upload_form.image_file.help_text %}
+                        <div class="col-12">
+                            <small class="form-text text-muted">{{ upload_form.image_file.help_text }}</small>
+                        </div>
+                    {% endif %}
+                    {% for error in upload_form.image_file.errors %}
+                        <div class="col-12">
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                        </div>
+                    {% endfor %}
+                </form>
+            </div>
+        </div> -->
 
         <div class="row">
             {% for image_url in image_urls %}

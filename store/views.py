@@ -4,7 +4,7 @@ from django.utils import timezone
 from django.db.models import Prefetch
 from django.utils.text import slugify # Added this import
 from .models import Product, Category, Tag, Image, Price, Warehouse, Stock, Counterparty, WorkerProductAudit
-from .forms import ProductForm, ImageForm, CategoryForm, TagForm, PriceForm, WarehouseForm, StockForm, CounterpartyForm, WorkerProductAuditForm, ExcelUploadForm
+from .forms import ProductForm, ImageForm, CategoryForm, TagForm, PriceForm, WarehouseForm, StockForm, CounterpartyForm, WorkerProductAuditForm, ExcelUploadForm, ManualImageUploadForm # Added ManualImageUploadForm
 from django.http import HttpResponse
 from openpyxl import load_workbook
 from decimal import Decimal
@@ -418,9 +418,15 @@ def auto_search_product_images_view(request):
 @login_required
 def save_selected_images_view(request):
     if request.method == 'POST':
-        selected_images = request.POST.getlist('selected_images')
         product_id_next = request.POST.get('next_product_id')
+        skip_product = request.POST.get('skip_product') # Check for skip button
 
+        if skip_product and product_id_next:
+            # If 'Skip' button was pressed, go to next product without saving
+            return redirect('store:one_by_one_image_search', product_id=product_id_next)
+        
+        selected_images = request.POST.getlist('selected_images')
+        
         for item in selected_images:
             product_id, image_url = item.split(',', 1)
             product = get_object_or_404(Product, id=product_id)
@@ -434,6 +440,23 @@ def save_selected_images_view(request):
 
     return redirect('store:auto_search_product_images')
 
+@login_required
+def upload_product_image(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+    if request.method == 'POST':
+        form = ManualImageUploadForm(request.POST, request.FILES)
+        if form.is_valid():
+            image_file = form.cleaned_data['image_file']
+            # Use the existing save_image_for_product utility
+            save_image_for_product(product, image_file) # Pass file object directly
+            # Optionally, add a success message
+            # messages.success(request, "Image uploaded successfully!")
+        else:
+            # Optionally, add an error message
+            # messages.error(request, "Error uploading image.")
+            pass # Handle form errors if needed, for now just pass
+    return redirect('store:one_by_one_image_search', product_id=product.id)
+
 
 # --- One by One Image Search Views ---
 
@@ -445,16 +468,50 @@ def one_by_one_product_list(request):
 @login_required
 def one_by_one_image_search(request, product_id):
     product = get_object_or_404(Product, id=product_id)
-    form = ImageSearchSettingsForm(request.POST or None)
-    context = {'product': product, 'form': form}
+    context = {'product': product}
 
-    if request.method == 'POST' and form.is_valid():
-        num_results = form.cleaned_data['num_results']
-        img_size = form.cleaned_data['img_size']
-        img_type = form.cleaned_data['img_type']
-        img_color_type = form.cleaned_data['img_color_type']
-        file_type = form.cleaned_data['file_type']
-        safe_search = form.cleaned_data['safe_search']
+    # Initialize forms
+    search_form = ImageSearchSettingsForm(request.POST if request.method == 'POST' else None)
+    upload_form = ManualImageUploadForm() # Always instantiate for GET requests
+
+    if request.method == 'POST':
+        # Check if the POST is for search settings or image upload
+        if 'num_results' in request.POST: # This is a search settings submission
+            form = search_form
+            if form.is_valid():
+                num_results = form.cleaned_data['num_results']
+                img_size = form.cleaned_data['img_size']
+                img_type = form.cleaned_data['img_type']
+                img_color_type = form.cleaned_data['img_color_type']
+                file_type = form.cleaned_data['file_type']
+                safe_search = form.cleaned_data['safe_search']
+
+                image_urls = get_image_search_results(
+                    product,
+                    num_results=num_results,
+                    img_size=img_size,
+                    img_type=img_type,
+                    img_color_type=img_color_type,
+                    file_type=file_type,
+                    safe_search=safe_search
+                )
+                context['image_urls'] = image_urls
+                context['search_triggered'] = True
+            else:
+                context['search_form'] = form # Pass invalid form back
+                context['upload_form'] = upload_form
+                return render(request, 'store/one_by_one_image_search.html', context)
+        # No need for an 'else' for upload form here, as upload is handled by a separate view
+    else: # GET request
+        # Automatically trigger search on GET if it's a fresh load for a product
+        # This handles redirection from 'save_selected_images_view' or direct access
+        form = search_form # Use the initialized search_form for defaults
+        num_results = form.initial.get('num_results', 7)
+        img_size = form.initial.get('img_size', 'large')
+        img_type = form.initial.get('img_type', 'photo')
+        img_color_type = form.initial.get('img_color_type', 'any')
+        file_type = form.initial.get('file_type', 'jpg')
+        safe_search = form.initial.get('safe_search', 'active')
 
         image_urls = get_image_search_results(
             product,
@@ -468,10 +525,13 @@ def one_by_one_image_search(request, product_id):
         context['image_urls'] = image_urls
         context['search_triggered'] = True
 
-        # For the "Save and Next" button
-        next_product = Product.objects.filter(is_active=True, name__gt=product.name).order_by('name').first()
-        if next_product:
-            context['next_product_id'] = next_product.id
+    context['search_form'] = search_form # Always pass search form
+    context['upload_form'] = upload_form # Always pass upload form
+
+    # For the "Save and Next" button (logic remains the same)
+    next_product = Product.objects.filter(is_active=True, name__gt=product.name).order_by('name').first()
+    if next_product:
+        context['next_product_id'] = next_product.id
 
     return render(request, 'store/one_by_one_image_search.html', context)
 

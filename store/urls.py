@@ -23,6 +23,7 @@ urlpatterns = [
     # One by one image search
     path('onebyone-search-images/', views.one_by_one_product_list, name='one_by_one_product_list'),
     path('onebyone-search-images/<uuid:product_id>/', views.one_by_one_image_search, name='one_by_one_image_search'),
+    path('upload-product-image/<uuid:product_id>/', views.upload_product_image, name='upload_product_image'), # New URL for manual image upload
 
     # Worker Product Audit URLs
     path('worker/products/', views.worker_product_list, name='worker_product_list'),

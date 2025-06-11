@@ -7,12 +7,13 @@ from .models import Product, Image as StoreImage # Renamed to avoid conflict wit
 from PIL import Image as PILImage # For image processing/validation if needed
 from io import BytesIO
 from datetime import datetime
+import time # Added this import
 
 # Default search parameters (can be overridden by form)
-DEFAULT_IMG_SIZE = "large"
-DEFAULT_IMG_TYPE = "photo"
+DEFAULT_IMG_SIZE = "any"
+DEFAULT_IMG_TYPE = "any"
 DEFAULT_IMG_COLOR_TYPE = "any"
-DEFAULT_FILE_TYPE = "jpg"
+DEFAULT_FILE_TYPE = "any"
 DEFAULT_SAFE_SEARCH = "active"
 
 def search_google_images(query, num_results=5,
@@ -49,8 +50,10 @@ def search_google_images(query, num_results=5,
     if file_type and file_type.lower() != "any": params['fileType'] = file_type
     if safe_search and safe_search.lower() != "off": params['safe'] = safe_search
 
-
     try:
+        # Introduce a delay to avoid hitting API rate limits
+        time.sleep(1) # Sleep for 1 second between requests
+
         response = requests.get(url, params=params, timeout=10)
         response.raise_for_status()  # Raise an exception for HTTP errors
         data = response.json()

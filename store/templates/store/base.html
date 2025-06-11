@@ -11,8 +11,23 @@
     <style>
         body.dark-theme {
             background-color: #121212;
-            color: #e0e0e0;
+            color: #e0e0e0; /* General text color for dark theme */
         }
+        /* Ensure all text within the dark theme is readable */
+        .dark-theme,
+        .dark-theme p,
+        .dark-theme h1, .dark-theme h2, .dark-theme h3, .dark-theme h4, .dark-theme h5, .dark-theme h6,
+        .dark-theme span, .dark-theme div, .dark-theme a:not(.btn),
+        .dark-theme label, .dark-theme input, .dark-theme textarea, .dark-theme select {
+            color: #e0e0e0; /* Brighter text for general elements */
+        }
+        .dark-theme a {
+            color: #8ab4f8; /* A slightly different color for links for distinction */
+        }
+        .dark-theme a:hover {
+            color: #c5d8ff;
+        }
+
         .dark-theme .navbar {
             background-color: #1f1f1f !important;
             border-bottom: 1px solid #333;
@@ -33,19 +48,40 @@
         .dark-theme footer {
             background-color: #1f1f1f !important;
             border-top: 1px solid #333;
-            color: #aaa;
+            color: #e0e0e0; /* Changed to brighter color */
         }
         .dark-theme footer a {
-            color: #0d6efd;
+            color: #8ab4f8; /* Consistent link color */
         }
         .dark-theme .card {
             background-color: #1f1f1f;
             border: 1px solid #333;
+            color: #e0e0e0; /* Ensure card text is visible */
         }
         .dark-theme .list-group-item {
             background-color: #1f1f1f;
             border: 1px solid #333;
             color: #e0e0e0;
+        }
+        .dark-theme .list-group-item-action:hover {
+            background-color: #3a3a3a;
+        }
+        /* Form control specific styles for dark theme */
+        .dark-theme .form-control,
+        .dark-theme .form-select {
+            background-color: #2c2c2c;
+            color: #e0e0e0;
+            border-color: #444;
+        }
+        .dark-theme .form-control::placeholder {
+            color: #aaa;
+        }
+        .dark-theme .form-control:focus,
+        .dark-theme .form-select:focus {
+            background-color: #2c2c2c;
+            color: #e0e0e0;
+            border-color: #8ab4f8;
+            box-shadow: 0 0 0 0.25rem rgba(138, 180, 248, 0.25);
         }
         .dark-theme .list-group-item-action:hover {
             background-color: #3a3a3a;

@@ -143,5 +143,5 @@ LOGOUT_REDIRECT_URL = 'store:home'  # Redirect to homepage after logout
 # LOGIN_URL = 'login' # If you have a custom login URL name, specify it here. Default is /accounts/login/
 
 # --- Google Custom Search API Settings ---
-GOOGLE_API_KEY = 'AIzaSyDKkI4mO8zZ_XgUcCSksUvR1wSrIQ1bWck'
+GOOGLE_API_KEY = 'AIzaSyAz571fR_-KgvgRekyTzggpkdB53OrUonI'
 GOOGLE_CSE_ID = "140ad6cab866c40cf"

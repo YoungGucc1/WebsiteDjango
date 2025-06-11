@@ -120,19 +120,19 @@ class ImageSearchSettingsForm(forms.Form):
         label="Number of Images per Product",
         min_value=1,
         max_value=10, # Google API typically returns max 10 per request
-        initial=3,
+        initial=7, # Changed default to 7
         help_text="How many images to attempt to download for each product (1-10)."
     )
     img_size = forms.ChoiceField(
         label="Image Size",
         choices=IMG_SIZE_OPTIONS,
-        initial="large",
+        initial="any",
         required=True
     )
     img_type = forms.ChoiceField(
         label="Image Type",
         choices=IMG_TYPE_OPTIONS,
-        initial="photo",
+        initial="any",
         required=True
     )
     img_color_type = forms.ChoiceField(
@@ -144,7 +144,7 @@ class ImageSearchSettingsForm(forms.Form):
     file_type = forms.ChoiceField(
         label="File Type",
         choices=FILE_TYPE_OPTIONS,
-        initial="jpg",
+        initial="any",
         required=True
     )
     safe_search = forms.ChoiceField(
@@ -166,4 +166,11 @@ class ExcelUploadForm(forms.Form):
     excel_file = forms.FileField(
         label="Select Excel File",
         help_text="Upload an .xlsx or .xls file for product import."
+    )
+
+# New form for manual image upload
+class ManualImageUploadForm(forms.Form):
+    image_file = forms.ImageField(
+        label="Upload Image",
+        help_text="Select an image file to upload for this product."
     )
