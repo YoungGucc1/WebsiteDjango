@@ -13,3 +13,4 @@ django-crispy-forms==2.1
 # djangorestframework==3.15.0
 # stripe==8.4.0
 # django-allauth==0.60.1
+django-bootstrap-v5

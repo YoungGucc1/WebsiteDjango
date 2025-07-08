@@ -9,7 +9,7 @@ Select a Product for Image Search
     <h2>Select a Product to Find Images For</h2>
     <div class="list-group">
         {% for product in products %}
-        <a href="{% url 'store:one_by_one_image_search' product.id %}" class="list-group-item list-group-item-action">
+        <a href="{% url 'store:one_by_one_image_search' product.id %}" class="list-group-item list-group-item-action {% if product.has_images %}has-images{% else %}no-images{% endif %}">
             {{ product.name }}
         </a>
         {% endfor %}

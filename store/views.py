@@ -462,7 +462,9 @@ def upload_product_image(request, product_id):
 
 @login_required
 def one_by_one_product_list(request):
-    products = Product.objects.filter(is_active=True).order_by('name')
+    products = Product.objects.filter(is_active=True).order_by('name').prefetch_related('images')
+    for product in products:
+        product.has_images = product.images.exists()
     return render(request, 'store/one_by_one_product_list.html', {'products': products})
 
 @login_required
