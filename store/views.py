@@ -12,6 +12,10 @@ import os
 from django.conf import settings
 from django.core.files.uploadedfile import InMemoryUploadedFile
 import io
+import base64
+from django.core.files.base import ContentFile
+from django.views.decorators.csrf import csrf_exempt
+from django.http import JsonResponse
 
 # Basic Views
 def home(request):
@@ -439,6 +443,44 @@ def save_selected_images_view(request):
             return redirect('store:one_by_one_product_list')
 
     return redirect('store:auto_search_product_images')
+
+@login_required
+def upload_webcam_image(request, product_id):
+    if request.method == 'POST':
+        product = get_object_or_404(Product, id=product_id)
+        image_data = request.POST.get('image_data')
+        
+        if image_data:
+            try:
+                # Decode the base64 image data
+                format, imgstr = image_data.split(';base64,') 
+                ext = format.split('/')[-1] 
+                
+                # Generate a filename
+                timestamp = timezone.now().strftime("%Y%m%d_%H%M%S")
+                image_index = product.images.count()
+                filename = f"webcam_{slugify(product.name)}_{image_index + 1}_{timestamp}.{ext}"
+
+                # Create a Django ContentFile
+                data = ContentFile(base64.b64decode(imgstr), name=filename)
+                
+                # Use the related manager's create() method to create, save, and associate the image in one step.
+                # This is safer and avoids potential double-saving issues.
+                store_image = product.images.create(
+                    name=f"{product.name} Webcam Image {image_index + 1}",
+                    alt_text=f"Webcam image for {product.name}",
+                    type=Image.ImageType.PRODUCT,
+                    is_main=False,
+                    file_path=data
+                )
+                
+                return JsonResponse({'success': True, 'image_url': store_image.file_path.url})
+            except Exception as e:
+                print(f"Error saving webcam image: {e}")
+                return JsonResponse({'success': False, 'error': str(e)})
+
+    return JsonResponse({'success': False, 'error': 'Invalid request'})
+
 
 @login_required
 def upload_product_image(request, product_id):
