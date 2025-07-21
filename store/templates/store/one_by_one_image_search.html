@@ -18,15 +18,15 @@ Image Search for {{ product.name }}
                 <a href="{% url 'store:one_by_one_image_search' next_product_id %}" class="btn btn-info" id="next-product-btn" style="display: none;">Next Product</a>
             {% endif %}
             <div id="camera-container" style="display: none;" class="mt-2">
-                <div class="video-wrapper" style="width: 320px; height: 320px; display: flex; justify-content: center; align-items: center; margin: auto; background-color: #f0f0f0; border: 1px solid #ccc; margin-bottom: 10px;">
-                    <video id="video" width="320" height="240" autoplay style="transition: transform 0.3s ease; object-fit: contain;"></video>
+                <div class="video-wrapper" style="width: 320px; height: 320px; display: flex; justify-content: center; align-items: center; margin: auto; background-color: #f0f0f0; border: 1px solid #ccc; margin-bottom: 10px; overflow: hidden;">
+                    <video id="video" width="320" height="320" autoplay style="transition: transform 0.3s ease; object-fit: cover;"></video>
                 </div>
                 <div class="mt-2 text-center">
                     <button id="click-photo" class="btn btn-info">Capture Photo</button>
                     <button id="rotate-left" class="btn btn-secondary">Rotate Left</button>
                     <button id="rotate-right" class="btn btn-secondary">Rotate Right</button>
                 </div>
-                <canvas id="canvas" width="320" height="240" style="display: none;"></canvas>
+                <canvas id="canvas" style="display: none;"></canvas>
             </div>
             <div id="captured-images-container" class="mt-3">
                 <h5>Captured Images</h5>
@@ -132,7 +132,7 @@ if (typeof window.oneByOneSearchScriptInitialized === 'undefined') {
 
         let isCapturing = false;
         let stream;
-        let currentRotation = 0;
+        let currentRotation = 270;
 
         const applyRotation = () => {
             // The wrapper will handle the layout, so we just rotate the video element.
@@ -146,6 +146,7 @@ if (typeof window.oneByOneSearchScriptInitialized === 'undefined') {
                     stream = await navigator.mediaDevices.getUserMedia(constraints);
                     video.srcObject = stream;
                     video.play();
+                    applyRotation();
 
                     // Disable button until the video stream is ready
                     clickPhotoButton.disabled = true; 
@@ -203,14 +204,10 @@ if (typeof window.oneByOneSearchScriptInitialized === 'undefined') {
             const videoW = video.videoWidth;
             const videoH = video.videoHeight;
 
-            // Set canvas size based on rotation
-            if (Math.abs(currentRotation % 180) === 90) {
-                canvas.width = videoH;
-                canvas.height = videoW;
-            } else {
-                canvas.width = videoW;
-                canvas.height = videoH;
-            }
+            // Make the canvas square by using the smaller dimension of the video
+            const cropSize = Math.min(videoW, videoH);
+            canvas.width = cropSize;
+            canvas.height = cropSize;
 
             const context = canvas.getContext('2d');
             const angle = currentRotation * Math.PI / 180;
